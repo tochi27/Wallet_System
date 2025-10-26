@@ -1,0 +1,90 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.test
+
+# Build outputs
+dist/
+build/
+coverage/
+.tmp/
+temp/
+.cache/
+out/
+logs/
+*.log
+
+# Prisma
+prisma/
+prisma/
+prisma/migrations/
+prisma/migrations/
+
+# Docker
+docker-compose.override.yml
+docker-data/
+postgres-data/
+*.pid
+
+# Jest / Supertest
+tests/
+*.test.tsbuildinfo
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts
+tsconfig.tsbuildinfo
+
+# VSCode & IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS / Windows / Linux junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# System files
+*.pid
+*.seed
+*.bak
+
+# Swagger generated files
+swagger.json
+swagger-output.json
+
+# Optional: local DB / cache
+data/
+.cache/
+*.db
+
+# Build artifacts for CI/CD
+*.tgz
+*.tar.gz
+
+# Test artifacts
+src/tests/
+
+# Config folder warnings (optional local-only files)
+config/db.ts
+
+# Ignore uploads or user data if any
+uploads/
+files/
