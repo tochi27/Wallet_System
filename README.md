@@ -245,11 +245,11 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydb
+      POSTGRES_USER: USER_NAME
+      POSTGRES_PASSWORD: USER_PASSWORD
+      POSTGRES_DB: DB_NAME
     ports:
-      - "5432:5432"
+      - "PORT:PORT"
 ```
 
 ---

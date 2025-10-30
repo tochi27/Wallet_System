@@ -20,21 +20,11 @@ out/
 logs/
 *.log
 
-# Prisma
-prisma/
-prisma/
-prisma/migrations/
-prisma/migrations/
-
 # Docker
 docker-compose.override.yml
 docker-data/
 postgres-data/
 *.pid
-
-# Jest / Supertest
-tests/
-*.test.tsbuildinfo
 
 # TypeScript
 *.tsbuildinfo
@@ -79,8 +69,8 @@ data/
 *.tgz
 *.tar.gz
 
-# Test artifacts
-src/tests/
+# # Test artifacts
+# src/tests/
 
 # Config folder warnings (optional local-only files)
 config/db.ts
