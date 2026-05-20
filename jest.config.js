@@ -10,4 +10,13 @@ module.exports = {
     "**/tests/**/*.test.ts",
     "**/tests/**/*.spec.ts",
   ],
+  moduleNameMapper: {
+    "^bullmq$": "<rootDir>/__mocks__/bullmq.js",
+  },
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/tests/**",
+    "!src/server.ts",
+    "!src/**/*.d.ts",
+  ],
 };

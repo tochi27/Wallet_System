@@ -1,14 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-// import { redisClient } from "../services/redis.service";
 import { errorResponse } from "../utils/response.utils";
 import prisma from "../config/db";
+import logger from "../config/logger";
+import { env } from "../config/env";
 import {
-  addToBlacklist,
   addToBlacklistWithExpiry,
   isBlacklisted,
 } from "../utils/tokenBlacklist.utils";
-import { time } from "console";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -30,13 +29,11 @@ export const authenticate = async (
   if (!token) return errorResponse(res, "Invalid authorization format", 401);
 
   try {
-    // Check if token is blacklisted
-    // Check blacklist
-    if (isBlacklisted(token)) {
+    if (await isBlacklisted(token)) {
       return errorResponse(res, "Token blacklisted, please login", 401);
     }
     // Verify and decode token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+    const decoded = jwt.verify(token, env.JWT_SECRET) as {
       userId: string;
     };
 
@@ -55,8 +52,9 @@ export const authenticate = async (
     req.token = token;
 
     next();
-  } catch (error: any) {
-    console.error("JWT verification failed:", error.message || error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ err: message }, "JWT verification failed");
     return errorResponse(res, "Invalid or expired token", 403);
   }
 };

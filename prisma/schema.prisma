@@ -7,28 +7,92 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  REVERSED
+}
+
 model User {
-  id        String    @id @default(uuid())
-  name      String
-  email     String    @unique
-  password  String
-  wallet    Wallet?
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  password     String
+  wallet       Wallet?
   transactions Transaction[]
-  createdAt DateTime  @default(now())
+  webhooks     Webhook[]
+  createdAt    DateTime      @default(now())
 }
 
 model Wallet {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  balance   Float    @default(0)
-  user      User     @relation(fields: [userId], references: [id])
+  id      String  @id @default(uuid())
+  userId  String  @unique
+  balance Decimal @default(0) @db.Decimal(18, 2)
+  user    User    @relation(fields: [userId], references: [id])
 }
 
 model Transaction {
+  id            String            @id @default(uuid())
+  reference     String            @unique @default(uuid())
+  userId        String
+  type          TransactionType
+  status        TransactionStatus @default(PENDING)
+  amount        Decimal           @db.Decimal(18, 2)
+  balanceBefore Decimal           @default(0) @db.Decimal(18, 2)
+  balanceAfter  Decimal           @default(0) @db.Decimal(18, 2)
+  description   String?
+  transferId    String?
+  reversalOf    String?
+  timestamp     DateTime          @default(now())
+  user          User              @relation(fields: [userId], references: [id])
+
+  @@index([transferId])
+  @@index([reversalOf])
+}
+
+model IdempotencyKey {
   id        String   @id @default(uuid())
+  key       String
   userId    String
-  type      String
-  amount    Float
-  timestamp DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  response  Json
+  createdAt DateTime @default(now())
+
+  @@unique([key, userId])
+  @@index([userId])
+}
+
+model Webhook {
+  id         String            @id @default(uuid())
+  userId     String
+  url        String
+  secret     String
+  events     String[]
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  user       User              @relation(fields: [userId], references: [id])
+  deliveries WebhookDelivery[]
+
+  @@index([userId])
+}
+
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  webhookId  String
+  event      String
+  payload    Json
+  statusCode Int?
+  success    Boolean
+  attempt    Int      @default(1)
+  error      String?
+  createdAt  DateTime @default(now())
+  webhook    Webhook  @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
 }

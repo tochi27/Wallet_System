@@ -7,7 +7,9 @@ pnpm-debug.log*
 
 # Environment files
 .env
+.env.development
 .env.test
+.env.production
 
 # Build outputs
 dist/
@@ -72,8 +74,6 @@ data/
 # # Test artifacts
 # src/tests/
 
-# Config folder warnings (optional local-only files)
-config/db.ts
 
 # Ignore uploads or user data if any
 uploads/
