@@ -4,7 +4,7 @@ import { findUserByEmail, registerUser } from "../services/auth.service";
 import { errorResponse, successResponse } from "../utils/response.utils";
 import { generateToken } from "../utils/jwt.utils";
 import { addToBlacklistWithExpiry } from "../utils/tokenBlacklist.utils";
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
 // User Sign-up controller
 export const signup = async (req: Request, res: Response): Promise<any> => {
@@ -40,7 +40,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
 };
 
 // User Log-out controller
-export const logout = (req: Request, res: Response) => {
+export const logout = async (req: Request, res: Response): Promise<any> => {
   const authHeader = req.headers.authorization;
   if (!authHeader)
     return errorResponse(res, "Authorization header missing", 400);
@@ -48,12 +48,11 @@ export const logout = (req: Request, res: Response) => {
   const token = authHeader.split(" ")[1];
   if (!token) return errorResponse(res, "Invalid token format", 400);
 
-  // Option 2: Add with JWT expiry (preferred)
-  const decoded = jwt.decode(token) as any;
+  const decoded = jwt.decode(token) as JwtPayload | null;
   const expiresIn = decoded?.exp
     ? decoded.exp - Math.floor(Date.now() / 1000)
     : 3600;
-  addToBlacklistWithExpiry(token, expiresIn);
+  await addToBlacklistWithExpiry(token, expiresIn);
 
   return successResponse(res, "Logout successful", {}, 200);
 };

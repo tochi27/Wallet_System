@@ -2,7 +2,7 @@
  * @swagger
  * tags:
  *   name: Auth
- *   description: User authentication APIs
+ *   description: User authentication — signup, login, and logout
  */
 
 /**
@@ -11,6 +11,7 @@
  *   post:
  *     summary: Register a new user
  *     tags: [Auth]
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:
@@ -24,28 +25,78 @@
  *             properties:
  *               name:
  *                 type: string
- *                 example: John Doe
+ *                 minLength: 1
+ *                 maxLength: 100
+ *                 example: Jane Doe
  *               email:
  *                 type: string
- *                 example: john@example.com
+ *                 format: email
+ *                 example: jane@example.com
  *               password:
  *                 type: string
- *                 example: secret123
+ *                 minLength: 8
+ *                 example: supersecret99
  *     responses:
  *       200:
  *         description: Signup successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Signup successful
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                           example: Jane Doe
+ *                         email:
+ *                           type: string
+ *                           example: jane@example.com
  *       400:
- *         description: Email already exists
+ *         description: Validation error or email already registered
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               emailExists:
+ *                 summary: Email already registered
+ *                 value:
+ *                   success: false
+ *                   message: Email already exists
+ *               validation:
+ *                 summary: Validation failure
+ *                 value:
+ *                   success: false
+ *                   message: Password must be at least 8 characters
  *       500:
- *         description: Signup failed
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 /**
  * @swagger
  * /api/auth/login:
  *   post:
- *     summary: Login a user
+ *     summary: Log in and receive a JWT
  *     tags: [Auth]
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:
@@ -58,38 +109,86 @@
  *             properties:
  *               email:
  *                 type: string
- *                 example: john@example.com
+ *                 format: email
+ *                 example: jane@example.com
  *               password:
  *                 type: string
- *                 example: secret123
+ *                 example: supersecret99
  *     responses:
  *       200:
- *         description: Login successful
+ *         description: Login successful — use the returned token as a Bearer token
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 token:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
  *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                   example: Login successful
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     token:
+ *                       type: string
+ *                       example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *       400:
- *         description: Invalid credentials
+ *         description: Invalid credentials or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               success: false
+ *               message: Invalid credentials
  *       500:
- *         description: Login failed
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 /**
  * @swagger
  * /api/auth/logout:
  *   post:
- *     summary: Logout a user
+ *     summary: Invalidate the current JWT
+ *     description: |
+ *       Blacklists the Bearer token so it cannot be reused.
+ *       The token is hashed before storage and expires automatically when the JWT expires.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Logout successful
  *       400:
- *         description: Authorization header missing / Invalid token format
+ *         description: Authorization header missing or malformed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               missingHeader:
+ *                 value:
+ *                   success: false
+ *                   message: Authorization header missing
+ *               invalidFormat:
+ *                 value:
+ *                   success: false
+ *                   message: Invalid token format
  */

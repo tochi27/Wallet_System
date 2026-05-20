@@ -26,7 +26,7 @@ describe("Auth Controllers (Integration with Express + Supertest)", () => {
 
       const res = await request(app)
         .post("/api/auth/signup")
-        .send({ name: "Tochi", email: "exists@test.com", password: "123456" });
+        .send({ name: "Tochi", email: "exists@test.com", password: "password123" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Email already exists");
@@ -38,7 +38,7 @@ describe("Auth Controllers (Integration with Express + Supertest)", () => {
 
       const res = await request(app)
         .post("/api/auth/signup")
-        .send({ name: "Tochi", email: "new@test.com", password: "123456" });
+        .send({ name: "Tochi", email: "new@test.com", password: "password123" });
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe("Signup successful");
@@ -53,7 +53,7 @@ describe("Auth Controllers (Integration with Express + Supertest)", () => {
 
       const res = await request(app)
         .post("/api/auth/login")
-        .send({ email: "ghost@test.com", password: "123456" });
+        .send({ email: "ghost@test.com", password: "password123" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Invalid credentials");
@@ -65,7 +65,7 @@ describe("Auth Controllers (Integration with Express + Supertest)", () => {
 
       const res = await request(app)
         .post("/api/auth/login")
-        .send({ email: "user@test.com", password: "wrongpw" });
+        .send({ email: "user@test.com", password: "wrongpassword" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Invalid credentials");
@@ -78,7 +78,7 @@ describe("Auth Controllers (Integration with Express + Supertest)", () => {
 
       const res = await request(app)
         .post("/api/auth/login")
-        .send({ email: "user@test.com", password: "123456" });
+        .send({ email: "user@test.com", password: "password123" });
 
       expect(res.status).toBe(200);
       expect(res.body.data.token).toBe("fake-token");

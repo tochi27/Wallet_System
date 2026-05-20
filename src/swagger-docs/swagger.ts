@@ -1,28 +1,29 @@
-const port = process.env.PORT || 5000;
+import { env } from "../config/env";
+
+const port = env.PORT;
 
 export const swaggerOptions = {
   definition: {
     openapi: "3.0.1",
     info: {
-      title: "Wallet API",
+      title: "Wallet System API",
       version: "1.0.0",
-      description: "APIs for the Wallet System",
+      description:
+        "A production-grade wallet engine supporting credits, debits, peer-to-peer transfers, reversals, and webhook notifications.",
       contact: {
-        name: "Your Name",
-        email: "you@example.com",
-        url: "https://www.example.com/",
+        name: "Tochukwu Amaechina",
+        email: "amaechina.tochukwu@awarri.com",
       },
       license: {
-        name: "Apache 2.0",
-        url: "https://www.apache.org/licenses/LICENSE-2.0.html",
+        name: "MIT",
+        url: "https://opensource.org/licenses/MIT",
       },
     },
     servers: [
       {
-        url: `http://localhost:${port}/`,
-        description: "Local Server",
+        url: `http://localhost:${port}`,
+        description: "Local development server",
       },
-      //  Other environments and their descriptions can be added here
     ],
     components: {
       securitySchemes: {
@@ -32,17 +33,65 @@ export const swaggerOptions = {
           bearerFormat: "JWT",
         },
       },
-    },
-    security: [
-      {
-        bearerAuth: [],
+      schemas: {
+        Transaction: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid", example: "550e8400-e29b-41d4-a716-446655440000" },
+            userId: { type: "string", format: "uuid" },
+            type: { type: "string", enum: ["CREDIT", "DEBIT"] },
+            status: {
+              type: "string",
+              enum: ["PENDING", "PROCESSING", "SUCCESSFUL", "FAILED", "REVERSED"],
+            },
+            amount: { type: "string", example: "100.00" },
+            balanceBefore: { type: "string", example: "0.00" },
+            balanceAfter: { type: "string", example: "100.00" },
+            reference: { type: "string", example: "3f7b8c2d-4e5f-6a7b-8c9d-0e1f2a3b4c5d" },
+            description: { type: "string", nullable: true, example: "Wallet top-up" },
+            transferId: { type: "string", nullable: true, format: "uuid" },
+            reversalOf: { type: "string", nullable: true, format: "uuid" },
+            timestamp: { type: "string", format: "date-time" },
+          },
+        },
+        Webhook: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            url: { type: "string", format: "uri", example: "https://your-server.com/webhooks" },
+            events: {
+              type: "array",
+              items: { type: "string", enum: ["CREDIT", "DEBIT", "TRANSFER", "REVERSAL", "*"] },
+              example: ["CREDIT", "DEBIT"],
+            },
+            isActive: { type: "boolean", example: true },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        WebhookDelivery: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            event: { type: "string", enum: ["CREDIT", "DEBIT", "TRANSFER", "REVERSAL"], example: "CREDIT" },
+            statusCode: { type: "integer", nullable: true, example: 200 },
+            success: { type: "boolean", example: true },
+            attempt: { type: "integer", description: "Which attempt number this was (1-based)", example: 1 },
+            error: { type: "string", nullable: true, description: "Error message for failed attempts; null on success", example: null },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        ErrorResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: false },
+            message: { type: "string", example: "Error description" },
+          },
+        },
       },
-    ],
+    },
+    security: [{ bearerAuth: [] }],
   },
   apis: [
-    "src/routes/*.ts", // All your route files
-    "src/routes/**/*.ts", // Nested routes
-    "src/controllers/**/*.ts", // Controller doc annotations
-    "src/swagger-docs/*.docs.ts", // Modular swagger docs
+    "src/swagger-docs/*.docs.ts",
   ],
 };
