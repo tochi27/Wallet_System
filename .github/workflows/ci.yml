@@ -32,3 +32,8 @@ jobs:
 
       - name: Run tests
         run: npm test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          JWT_SECRET: ci-test-secret-not-used-in-mocked-tests
+          REDIS_URL: redis://localhost:6379
