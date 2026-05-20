@@ -1,48 +1,54 @@
-# 🚀 Prisma + Docker + Node.js Backend
+# 💰 Wallet System API
 
-A **TypeScript-based backend** built with **Express**, **Prisma**, and **token blacklisting** — fully containerized with Docker, tested with **Jest**, and documented with **Swagger**.  
-This project is built for scalability, maintainability, and production readiness.
+A production-grade **TypeScript** wallet engine built with **Express**, **Prisma**, and **Redis** — supporting credits, debits, peer-to-peer transfers, reversals, idempotency, webhook notifications with retry, and cursor-based pagination.
 
 ---
 
 ## ⚙️ Tech Stack
 
 | Layer | Technology | Purpose |
-|:------|:------------|:--------|
-| Language | **TypeScript** | Type safety and developer experience |
-| Framework | **Express.js** | Web server framework |
+|:------|:-----------|:--------|
+| Language | **TypeScript** | Type safety |
+| Framework | **Express.js** | HTTP server |
 | ORM | **Prisma** | Database modeling and access |
-| Cache & Auth | Token blacklisting and caching |
-| Testing | **Jest + Supertest** | Unit and integration testing |
-| Documentation | **Swagger (swagger-jsdoc + swagger-ui-express)** | API documentation |
-| Containerization | **Docker + Docker Compose** | Environment consistency |
 | Database | **PostgreSQL** | Persistent data layer |
+| Cache & Locks | **Redis (ioredis)** | Distributed locks, balance cache, token blacklist, idempotency |
+| Queue | **BullMQ** | Async transaction events and webhook dispatch with retry |
+| Validation | **Zod** | Runtime schema validation (env vars + request bodies) |
+| Logging | **Pino + pino-http** | Structured JSON logging with request tracing |
+| Testing | **Jest + Supertest** | Unit and integration tests |
+| Documentation | **Swagger (swagger-jsdoc + swagger-ui-express)** | Auto-generated API docs |
+| Containerization | **Docker + Docker Compose** | Local environment |
+| CI | **GitHub Actions** | Type-check and test on every push/PR |
 
 ---
 
 ## 🧩 Features
 
-✅ **User Authentication & JWT Token Management**  
-✅ **Token Blacklisting** for secure logout and session invalidation  
-✅ **Prisma ORM Integration** with PostgreSQL  
-✅ **Centralized Error Handling & Validation Middleware**  
-✅ **Modular Swagger Documentation** (Superset Swagger Docs)  
-✅ **Unit & Integration Testing with Jest + Supertest**  
-✅ **Dockerized Environment** (Postgres + App)  
-✅ **Layered Architecture** (Controller → Service → Model)  
+- **Wallet operations** — credit, debit, balance (stored + computed), transaction history
+- **Peer-to-peer transfers** — atomic debit/credit with distributed locking
+- **Reversals** — reverse any successful transaction; transfer reversals unwind both legs
+- **Idempotency** — `Idempotency-Key` header on credit, debit, and transfer (24-hour Redis TTL)
+- **Cursor-based pagination** — `GET /api/wallet/transactions` with `limit` + `cursor`
+- **Webhooks** — register endpoints, HMAC-SHA256 signed deliveries, soft-delete
+- **Webhook retry** — BullMQ queue, 4 attempts, exponential backoff (2 s base)
+- **Delivery history** — per-attempt audit trail via `GET /api/webhooks/:id/deliveries`
+- **Distributed locking** — Redis SET NX PX + Lua release prevents concurrent balance corruption
+- **Balance caching** — 60-second Redis TTL, invalidated on every write
+- **Token blacklisting** — SHA-256 hashed JWTs stored in Redis with matching TTL
+- **Health check** — `GET /health` probes Postgres and Redis, returns 200/503
+- **Env validation** — Zod schema at startup, typed `env` export, fails fast with clear errors
+- **Rate limiting** — per-route express-rate-limit (skipped in test environment)
 
 ---
 
 ## 🏁 Quick Start
 
-### 1. Prerequisites
-- Node.js **v18+**
+### Prerequisites
+- Node.js **v20+**
 - Docker & Docker Compose
-- npm or yarn
 
----
-
-### 2. Clone & Install
+### 1. Clone & Install
 
 ```bash
 git clone <your-repo-url>
@@ -50,162 +56,98 @@ cd wallet-system
 npm install
 ```
 
----
+### 2. Environment Setup
 
-### 3. Environment Setup
-
-Create a `.env` file in the root directory:
-
-```env
-DATABASE_URL
-REDIS_URL
-PORT
-NODE_ENV
-JWT_SECRET
-expiresIn
-```
-
----
-
-### 4. Configuration Directory
-
-Create a `/config` folder with Prisma config:
-
-```
-config/
-├── db.ts
-```
-
-Example `db.ts`:
-```
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
-export default prisma;
-
-```
-
----
-
-### 5. Run with Docker (Recommended)
+Copy the example file and fill in your values:
 
 ```bash
-docker-compose up --build
-# or in background
-docker-compose up -d --build
+cp .env.example .env.development
 ```
 
----
+The app loads `.env.{NODE_ENV}` at startup — so you need:
 
-### 6. Database Initialization
+| File | Used when |
+|:-----|:----------|
+| `.env.development` | `npm run dev` |
+| `.env.test` | `npm test` |
+| `.env.production` | production |
+
+### 3. Start Dependencies
 
 ```bash
+docker compose up -d   # starts Postgres and Redis
+```
+
+### 4. Run Migrations & Generate Client
+
+```bash
+npx prisma migrate deploy
 npx prisma generate
-npx prisma db push
 ```
+
+### 5. Start the Dev Server
+
+```bash
+npm run dev
+```
+
+Server runs at `http://localhost:4000`.
 
 ---
 
 ## 🧪 Testing
 
-Unit & integration tests are written with **Jest** and **Supertest**.
+All tests are fully mocked — no running database or Redis required.
 
-Run all tests:
 ```bash
-npm run test
+npm test                 # run all tests
+npm run test:coverage    # run with coverage report
 ```
 
 ---
 
-## 🧰 Development Scripts
+## 🧰 Scripts
 
 | Command | Description |
-|:--------|:-------------|
+|:--------|:------------|
 | `npm run dev` | Start development server with Nodemon |
 | `npm run build` | Compile TypeScript to JavaScript |
-| `npm start` | Run compiled project in production |
+| `npm start` | Run compiled build |
+| `npm test` | Run Jest test suite |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run db:generate` | Regenerate Prisma client |
+| `npm run db:push` | Push schema changes without a migration |
 | `npm run db:studio` | Open Prisma Studio |
-| `npm run lint` | Run ESLint for code quality |
-| `npm run test` | Run Jest test suite |
+| `npm run docker:dev` | Start app + dependencies via Docker Compose |
 
 ---
 
-## 📚 API Documentation (Swagger)
+## 📚 API Documentation
 
-Swagger Docs are auto-generated using **swagger-jsdoc** and served via **swagger-ui-express**.
+Swagger UI is available at:
 
-Access Swagger UI:
 ```
-http://localhost:3000/api-docs
-```
-
-**Swagger Setup Example (`src/swagger-docs/swagger.ts`):**
-```ts
-import swaggerJsdoc from "swagger-jsdoc";
-import swaggerUi from "swagger-ui-express";
-
-const options = {
-  definition: {
-    openapi: "3.0.0",
-    info: {
-      title: "Wallet System API",
-      version: "1.0.0",
-      description: "API documentation for Prisma Wallet System",
-    },
-    servers: [
-      {
-        url: `http://localhost:${port}`,
-      },
-    ],
-  },
-  apis: ["./src/swagger-docs/*.docs.ts"],
-};
-
-export const swaggerSpec = swaggerJsdoc(options);
-export const swaggerDocs = (app: any) => {
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-};
+http://localhost:4000/api-docs
 ```
 
----
+### Endpoints
 
-## 🔒 Token Blacklisting
-
-Development stage token blacklisting is used to **invalidate JWT tokens** after logout.
-```ts
-const blacklistedTokens = new Set<string>();
-
-// Add token to blacklist
-export const addToBlacklist = (token: string) => {
-  blacklistedTokens.add(token);
-};
-
-// Check if token is blacklisted
-export const isBlacklisted = (token: string): boolean => {
-  return blacklistedTokens.has(token);
-};
-
-// Optional: clean up expired tokens automatically
-export const addToBlacklistWithExpiry = (token: string, expiresIn: number) => {
-  blacklistedTokens.add(token);
-  setTimeout(() => blacklistedTokens.delete(token), expiresIn * 1000); // expiresIn in seconds
-};
-```
-
-**Redis** Logic can be implemented also.
-
-**Key logic (simplified):** in the case of using **Redis**
-```ts
-import { redisClient } from "../services/redis.service";
-
-export const blacklistToken = async (token: string) => {
-  await redisClient.set(token, "blacklisted", "EX", 60 * 60 * 24);
-};
-
-export const isBlacklisted = async (token: string) => {
-  const value = await redisClient.get(token);
-  return value === "blacklisted";
-};
-```
+| Method | Path | Description |
+|:-------|:-----|:------------|
+| `POST` | `/api/auth/signup` | Register a new user |
+| `POST` | `/api/auth/login` | Login and receive a JWT |
+| `POST` | `/api/auth/logout` | Invalidate the current token |
+| `POST` | `/api/wallet/credit` | Credit the wallet |
+| `POST` | `/api/wallet/debit` | Debit the wallet |
+| `GET` | `/api/wallet/balance` | Get stored and computed balance |
+| `GET` | `/api/wallet/transactions` | Paginated transaction history |
+| `POST` | `/api/wallet/transfer` | Transfer funds to another user |
+| `POST` | `/api/wallet/transactions/:id/reverse` | Reverse a transaction |
+| `POST` | `/api/webhooks` | Register a webhook |
+| `GET` | `/api/webhooks` | List active webhooks |
+| `DELETE` | `/api/webhooks/:id` | Deactivate a webhook |
+| `GET` | `/api/webhooks/:id/deliveries` | View delivery history |
+| `GET` | `/health` | Health check (DB + Redis status) |
 
 ---
 
@@ -213,43 +155,46 @@ export const isBlacklisted = async (token: string) => {
 
 ```
 src/
-├── app.ts                # Express app setup
-├── server.ts             # Entry point
-├── config/               # Config module
-├── controllers/          # Route handlers
-├── middleware/           # Auth & validation middleware
-├── routes/               # API routes
-├── services/             # Business logic
-├── swagger-docs/         # Swagger modular docs
-├── tests/                # Jest unit & integration tests
-└── utils/                # Helpers, responses, and utilities
+├── app.ts                    # Express app setup, middleware, workers
+├── server.ts                 # Entry point
+├── config/
+│   ├── db.ts                 # Prisma client
+│   ├── env.ts                # Zod env validation
+│   ├── logger.ts             # Pino logger
+│   └── redis.config.ts       # BullMQ connection config
+├── controllers/              # Route handlers
+├── middleware/               # Auth, validation, rate limiting
+├── queues/                   # BullMQ queue definitions
+├── routes/                   # API route definitions
+├── services/                 # Business logic
+├── swagger-docs/             # Modular Swagger JSDoc comments
+├── tests/
+│   ├── integration/          # Supertest controller tests
+│   └── unit/                 # Service and worker unit tests
+├── utils/                    # Helpers (JWT, locks, cache, idempotency)
+├── validators/               # Zod request schemas
+└── workers/                  # BullMQ worker processes
 ```
 
 ---
 
-## 🐳 Docker Overview
+## 🔒 Security
 
-**docker-compose.yml:**
-```yaml
-version: "3.8"
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    env_file: .env
-    depends_on:
-      - postgres
-      - redis
+- Passwords hashed with **bcrypt**
+- JWTs signed with a secret (minimum 32 chars in production)
+- Tokens blacklisted in Redis on logout (TTL matches token expiry)
+- All webhook payloads signed with **HMAC-SHA256**; verify the `X-Webhook-Signature` header on receipt
+- Helmet middleware sets security headers on every response
+- Rate limiting on auth and wallet routes
 
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: USER_NAME
-      POSTGRES_PASSWORD: USER_PASSWORD
-      POSTGRES_DB: DB_NAME
-    ports:
-      - "PORT:PORT"
+---
+
+## 🐳 Docker
+
+```bash
+docker compose up -d       # start Postgres + Redis in background
+docker compose down        # stop and remove containers
+docker compose down -v     # also remove volumes (wipes DB data)
 ```
 
 ---
@@ -258,17 +203,8 @@ services:
 
 | Issue | Fix |
 |:------|:----|
-| `Port already in use` | Change ports in `.env` or `docker-compose.yml` |
-| `Prisma errors` | Run `npx prisma generate` and `npx prisma db push` |
-| Tests failing due to DB | Run containers before executing tests |
-
----
-
-## 🧠 Future Enhancements
-- Add **role-based access control (RBAC)**
-- Implement **rate limiting** and **token blacklisting** with Redis
-- CI/CD pipeline with GitHub Actions
-- Deployment-ready Helm chart for Kubernetes
-- Real-time notifications (WebSocket or Socket.IO)
-
----
+| `DATABASE_URL is required` at startup | Check your `.env.development` file exists and has the variable set |
+| `ECONNREFUSED 6379` | Redis isn't running — start Docker Desktop then `docker compose up -d` |
+| `ECONNREFUSED 5432` | Postgres isn't running — same as above |
+| Prisma type errors | Run `npx prisma generate` after any schema change |
+| Port already in use | Change `PORT` in `.env.development` |
