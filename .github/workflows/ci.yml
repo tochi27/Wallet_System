@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -37,3 +37,13 @@ jobs:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           JWT_SECRET: ci-test-secret-not-used-in-mocked-tests
           REDIS_URL: redis://localhost:6379
+
+  deploy:
+    name: Deploy to Render
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Trigger Render deploy
+        run: curl -f "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"

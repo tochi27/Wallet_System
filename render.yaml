@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: wallet-system-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    preDeployCommand: "npx prisma migrate deploy"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wallet-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: wallet-redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false  # set manually in Render dashboard
+
+  - type: redis
+    name: wallet-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: wallet-db
+    plan: free
