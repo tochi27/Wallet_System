@@ -15,18 +15,10 @@ services:
           name: wallet-db
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: wallet-redis
-          property: connectionString
+        sync: false  # set manually in Render dashboard
       - key: JWT_SECRET
         sync: false  # set manually in Render dashboard
 
-  - type: redis
-    name: wallet-redis
-    plan: free
-    maxmemoryPolicy: noeviction
-    ipAllowList: []
 
 databases:
   - name: wallet-db
