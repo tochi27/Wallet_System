@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import { Worker } from "bullmq";
 import helmet from "helmet";
+import cors from "cors";
 import pinoHttp from "pino-http";
 import { env } from "./config/env";
 import prisma from "./config/db";
@@ -20,6 +21,7 @@ const app = express();
 
 // ✅ Middleware
 app.use(helmet());
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
