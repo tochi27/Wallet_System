@@ -1,7 +1,5 @@
 import path from "path";
-import { env } from "../config/env";
 
-const port = env.PORT;
 const isCompiled = __filename.endsWith(".js");
 const docsGlob = path.join(__dirname, isCompiled ? "*.docs.js" : "*.docs.ts");
 
@@ -15,7 +13,7 @@ export const swaggerOptions = {
         "A production-grade wallet engine supporting credits, debits, peer-to-peer transfers, reversals, and webhook notifications.",
       contact: {
         name: "Tochukwu Amaechina",
-        email: "amaechina.tochukwu@awarri.com",
+        email: "tochukwuamaechina2703@gmail.com",
       },
       license: {
         name: "MIT",
@@ -24,12 +22,8 @@ export const swaggerOptions = {
     },
     servers: [
       {
-        url: "https://wallet-system-api.onrender.com",
-        description: "Production server",
-      },
-      {
-        url: `http://localhost:${port}`,
-        description: "Local development server",
+        url: "/",
+        description: "Current server",
       },
     ],
     components: {
