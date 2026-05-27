@@ -1,6 +1,9 @@
+import path from "path";
 import { env } from "../config/env";
 
 const port = env.PORT;
+const isCompiled = __filename.endsWith(".js");
+const docsGlob = path.join(__dirname, isCompiled ? "*.docs.js" : "*.docs.ts");
 
 export const swaggerOptions = {
   definition: {
@@ -20,6 +23,10 @@ export const swaggerOptions = {
       },
     },
     servers: [
+      {
+        url: "https://wallet-system-api.onrender.com",
+        description: "Production server",
+      },
       {
         url: `http://localhost:${port}`,
         description: "Local development server",
@@ -91,7 +98,5 @@ export const swaggerOptions = {
     },
     security: [{ bearerAuth: [] }],
   },
-  apis: [
-    "src/swagger-docs/*.docs.ts",
-  ],
+  apis: [docsGlob],
 };
