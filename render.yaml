@@ -26,6 +26,7 @@ services:
     name: wallet-redis
     plan: free
     maxmemoryPolicy: noeviction
+    ipAllowList: []
 
 databases:
   - name: wallet-db
