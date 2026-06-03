@@ -19,7 +19,7 @@ A production-grade **TypeScript** wallet engine built with **Express**, **Prisma
 | Testing | **Jest + Supertest** | Unit and integration tests |
 | Documentation | **Swagger (swagger-jsdoc + swagger-ui-express)** | Auto-generated API docs |
 | Containerization | **Docker + Docker Compose** | Local environment |
-| CI | **GitHub Actions** | Type-check and test on every push/PR |
+| CI/CD | **GitHub Actions** | Type-check and test on every push/PR; auto-deploy to Render on merge to main |
 
 ---
 
@@ -126,9 +126,10 @@ npm run test:coverage    # run with coverage report
 
 Swagger UI is available at:
 
-```
-http://localhost:4000/api-docs
-```
+| Environment | URL |
+|:------------|:----|
+| Production | `https://wallet-system-api-16cv.onrender.com/api-docs` |
+| Local | `http://localhost:4000/api-docs` |
 
 ### Endpoints
 
