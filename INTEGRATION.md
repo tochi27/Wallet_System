@@ -1,7 +1,7 @@
 # Wallet System — Frontend Integration Guide
 
-Base URL: `https://wallet-system-api.onrender.com`  
-Swagger UI: `https://wallet-system-api.onrender.com/api-docs`
+Base URL: `https://wallet-system-api-16cv.onrender.com`  
+Swagger UI: `https://wallet-system-api-16cv.onrender.com/api-docs`
 
 > **Note:** The API is hosted on Render's free tier. The first request after 15+ minutes of inactivity may take 30–60 seconds while the service cold-starts. Subsequent requests are fast.
 
@@ -70,7 +70,7 @@ This blacklists the token immediately. Clear it from your app's state on success
 Include the JWT in the `Authorization` header on every wallet request:
 
 ```js
-const res = await fetch("https://wallet-system-api.onrender.com/api/wallet/balance", {
+const res = await fetch("https://wallet-system-api-16cv.onrender.com/api/wallet/balance", {
   headers: {
     "Authorization": `Bearer ${token}`,
     "Content-Type": "application/json",
