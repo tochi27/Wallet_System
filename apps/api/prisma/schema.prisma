@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  REVERSED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  password     String
+  wallet       Wallet?
+  transactions Transaction[]
+  webhooks     Webhook[]
+  deposits     Deposit[]
+  bankAccounts BankAccount[]
+  withdrawals  Withdrawal[]
+  createdAt    DateTime      @default(now())
+}
+
+model Wallet {
+  id      String  @id @default(uuid())
+  userId  String  @unique
+  balance Decimal @default(0) @db.Decimal(18, 2)
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  reference     String            @unique @default(uuid())
+  userId        String
+  type          TransactionType
+  status        TransactionStatus @default(PENDING)
+  amount        Decimal           @db.Decimal(18, 2)
+  balanceBefore Decimal           @default(0) @db.Decimal(18, 2)
+  balanceAfter  Decimal           @default(0) @db.Decimal(18, 2)
+  description   String?
+  transferId    String?
+  reversalOf    String?
+  timestamp     DateTime          @default(now())
+  user          User              @relation(fields: [userId], references: [id])
+
+  @@index([transferId])
+  @@index([reversalOf])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(uuid())
+  key       String
+  userId    String
+  response  Json
+  createdAt DateTime @default(now())
+
+  @@unique([key, userId])
+  @@index([userId])
+}
+
+model Webhook {
+  id         String            @id @default(uuid())
+  userId     String
+  url        String
+  secret     String
+  events     String[]
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  user       User              @relation(fields: [userId], references: [id])
+  deliveries WebhookDelivery[]
+
+  @@index([userId])
+}
+
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  webhookId  String
+  event      String
+  payload    Json
+  statusCode Int?
+  success    Boolean
+  attempt    Int      @default(1)
+  error      String?
+  createdAt  DateTime @default(now())
+  webhook    Webhook  @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
+}
+
+enum DepositStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  ABANDONED
+}
+
+// Money coming in through Paystack. The wallet is credited only after Paystack confirms the
+// payment, and exactly once: the PENDING -> SUCCESSFUL update and the ledger credit share a
+// database transaction.
+model Deposit {
+  id               String        @id @default(uuid())
+  userId           String
+  reference        String        @unique
+  amount           Decimal       @db.Decimal(18, 2)
+  currency         String        @default("NGN")
+  status           DepositStatus @default(PENDING)
+  authorizationUrl String?
+  accessCode       String?
+  channel          String?
+  paidAt           DateTime?
+  failureReason    String?
+  transactionId    String?       @unique
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// Every Paystack webhook received, keyed so a redelivered event is recognised and ignored
+model PaystackEvent {
+  id          String    @id @default(uuid())
+  eventKey    String    @unique
+  event       String
+  reference   String?
+  payload     Json
+  processedAt DateTime?
+  receivedAt  DateTime  @default(now())
+
+  @@index([reference])
+}
+
+// A payout destination. The account name comes from Paystack's lookup, never from the user, and
+// only the last four digits of the account number are kept.
+model BankAccount {
+  id                 String       @id @default(uuid())
+  userId             String
+  bankCode           String
+  bankName           String
+  accountNumberLast4 String
+  accountName        String
+  recipientCode      String
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  user               User         @relation(fields: [userId], references: [id])
+  withdrawals        Withdrawal[]
+
+  @@unique([userId, recipientCode])
+  @@index([userId])
+}
+
+enum WithdrawalStatus {
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  REVERSED
+}
+
+// Money going out through a Paystack transfer. The wallet is debited when the withdrawal is
+// created (so the money can't be spent twice); if the transfer fails or is reversed, the debit is
+// reversed and the money returned, exactly once.
+model Withdrawal {
+  id                  String           @id @default(uuid())
+  userId              String
+  bankAccountId       String
+  reference           String           @unique
+  amount              Decimal          @db.Decimal(18, 2)
+  currency            String           @default("NGN")
+  status              WithdrawalStatus @default(PROCESSING)
+  transferCode        String?
+  failureReason       String?
+  debitTransactionId  String           @unique
+  refundTransactionId String?          @unique
+  completedAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  user                User             @relation(fields: [userId], references: [id])
+  bankAccount         BankAccount      @relation(fields: [bankAccountId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}

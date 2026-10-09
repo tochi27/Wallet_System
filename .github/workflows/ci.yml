@@ -7,8 +7,30 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Type-check & Test
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/**'
+
+  test-api:
+    name: API — Type-check & Test
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -25,22 +47,23 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: npm run db:generate
 
       - name: Type check
         run: npx tsc --noEmit
+        working-directory: apps/api
 
       - name: Run tests
-        run: npm test
+        run: npm run test:api
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           JWT_SECRET: ci-test-secret-not-used-in-mocked-tests
           REDIS_URL: redis://localhost:6379
 
-  deploy:
-    name: Deploy to Render
-    needs: test
+  deploy-api:
+    name: Deploy API to Render
+    needs: test-api
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 

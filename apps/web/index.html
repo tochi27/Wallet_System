@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wallet</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a light/dark flash.
+      // Keep the key in sync with THEME_KEY in src/lib/theme-context.ts.
+      try {
+        var t = localStorage.getItem("wallet.theme")
+        var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches)
+        document.documentElement.classList.toggle("dark", dark)
+        document.documentElement.style.colorScheme = dark ? "dark" : "light"
+      } catch (e) {}
+    </script>
+    <meta name="description" content="Manage your wallet: balance, transfers, and transaction history." />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

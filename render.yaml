@@ -2,9 +2,15 @@ services:
   - type: web
     name: wallet-system-api
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerfilePath: ./apps/api/Dockerfile
     healthCheckPath: /health
     preDeployCommand: "npx prisma migrate deploy"
+    buildFilter:
+      paths:
+        - apps/api/**
+        - package.json
+        - package-lock.json
     envVars:
       - key: NODE_ENV
         value: production
@@ -18,6 +24,14 @@ services:
         sync: false  # set manually in Render dashboard
       - key: JWT_SECRET
         sync: false  # set manually in Render dashboard
+      - key: CORS_ORIGINS
+        sync: false  # frontend URL(s), comma-separated — set manually in Render dashboard
+      - key: PAYSTACK_SECRET_KEY
+        sync: false  # sk_test_… or sk_live_… — set manually in Render dashboard
+      - key: PAYSTACK_CALLBACK_URL
+        sync: false  # https://<frontend>/deposit/callback
+      - key: DIRECT_FUNDING_ENABLED
+        value: "false"  # no direct credit/debit/reversal in production; money moves through Paystack
 
 
 databases:

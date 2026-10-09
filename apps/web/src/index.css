@@ -1,0 +1,170 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Wallet theme extras */
+    --color-success: var(--success);
+    --color-tile: var(--tile);
+    --color-chart-current: var(--chart-current);
+    --color-chart-previous: var(--chart-previous);
+    --color-chart-grid: var(--chart-grid);
+    --shadow-soft: var(--shadow-soft);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Violet / lavender wallet theme */
+:root {
+    --background: #f7f6fd;
+    --foreground: #16131f;
+    --card: #ffffff;
+    --card-foreground: #16131f;
+    --popover: #ffffff;
+    --popover-foreground: #16131f;
+    --primary: #6d4aff;
+    --primary-foreground: #ffffff;
+    --secondary: #efebff;
+    --secondary-foreground: #3b2a99;
+    --muted: #f1effa;
+    --muted-foreground: #6b6880;
+    --accent: #efebff;
+    --accent-foreground: #3b2a99;
+    --destructive: #dc2626;
+    --success: #15803d;
+    --border: #e8e5f5;
+    --input: #e2def2;
+    --ring: #8f78ff;
+    --tile: #fbfaff;
+    /* Chart pair — validated with the dataviz palette checker against the card surface */
+    --chart-current: #6d4aff;
+    --chart-previous: #b09cff;
+    --chart-grid: #ece9f6;
+    --chart-1: #6d4aff;
+    --chart-2: #b09cff;
+    --chart-3: #3b2a99;
+    --chart-4: #8f78ff;
+    --chart-5: #d9d0ff;
+    --radius: 0.875rem;
+    --shadow-soft: 0 1px 2px rgb(40 22 120 / 0.04), 0 8px 24px -12px rgb(60 36 170 / 0.18);
+    --page-glow: #dcd5ff;
+    --hero-from: #7357ff;
+    --hero-to: #5b36f0;
+    --sidebar: #ffffff;
+    --sidebar-foreground: #16131f;
+    --sidebar-primary: #6d4aff;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #efebff;
+    --sidebar-accent-foreground: #3b2a99;
+    --sidebar-border: #e8e5f5;
+    --sidebar-ring: #8f78ff;
+}
+
+.dark {
+    --background: #110f18;
+    --foreground: #f4f2fb;
+    --card: #1a1726;
+    --card-foreground: #f4f2fb;
+    --popover: #1f1b2d;
+    --popover-foreground: #f4f2fb;
+    --primary: #7357ff;
+    --primary-foreground: #ffffff;
+    --secondary: #262138;
+    --secondary-foreground: #d9d0ff;
+    --muted: #231f33;
+    --muted-foreground: #a29db8;
+    --accent: #2a2440;
+    --accent-foreground: #e4ddff;
+    --destructive: #f87171;
+    --success: #4ade80;
+    --border: #2b2640;
+    --input: #322c48;
+    --ring: #8778fc;
+    --tile: #1d1a2a;
+    --chart-current: #8778fc;
+    --chart-previous: #5b45c5;
+    --chart-grid: #2a2539;
+    --chart-1: #8778fc;
+    --chart-2: #5b45c5;
+    --chart-3: #b8acff;
+    --chart-4: #6d5ae0;
+    --chart-5: #3b2f7a;
+    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --page-glow: #2a1f5c;
+    --hero-from: #6f58f0;
+    --hero-to: #4b33c9;
+    --sidebar: #1a1726;
+    --sidebar-foreground: #f4f2fb;
+    --sidebar-primary: #7357ff;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #2a2440;
+    --sidebar-accent-foreground: #e4ddff;
+    --sidebar-border: #2b2640;
+    --sidebar-ring: #8778fc;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground antialiased;
+    }
+  button:not(:disabled), [role="button"]:not(:disabled) {
+    cursor: pointer;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+@layer utilities {
+  /* Lavender wash behind the top of every page, as in the design */
+  .page-glow {
+    background-image: linear-gradient(to bottom, var(--page-glow), transparent 22rem);
+  }
+  .hero-gradient {
+    background-image: linear-gradient(135deg, var(--hero-from), var(--hero-to));
+  }
+}
