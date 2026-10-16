@@ -7,7 +7,7 @@ export const swaggerOptions = {
   definition: {
     openapi: "3.0.1",
     info: {
-      title: "Wallet System API",
+      title: "PurpleWallet API",
       version: "1.0.0",
       description:
         "A production-grade wallet engine supporting credits, debits, peer-to-peer transfers, reversals, and webhook notifications.",

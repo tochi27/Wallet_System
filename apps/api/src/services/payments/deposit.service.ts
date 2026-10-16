@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
-import { Deposit, DepositStatus, Prisma, TransactionStatus, TransactionType } from "@prisma/client";
+import { Deposit, DepositStatus, JournalEntryType, Prisma, TransactionStatus, TransactionType } from "@prisma/client";
+import { assertCanReceive } from "../limits.service";
 import prisma from "../../config/db";
 import { env } from "../../config/env";
 import logger from "../../config/logger";
@@ -7,6 +8,8 @@ import { enqueueTransactionEvent } from "../../queues/transaction.queue";
 import { invalidateBalance } from "../../utils/cache.utils";
 import { getIdempotencyRecord, saveIdempotencyRecord } from "../../utils/idempotency.utils";
 import { withLock } from "../../utils/lock.utils";
+import { post, SYSTEM_ACCOUNTS } from "../ledger/ledger.service";
+import { formatNaira, notify } from "../notifications/notification.service";
 import { initializeTransaction, toSubunit, verifyTransaction, type VerifiedTransaction } from "./paystack.client";
 
 export const DEPOSIT_CURRENCY = "NGN";
@@ -68,6 +71,9 @@ export const createDeposit = async (
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
   if (!user) throw new Error("User not found");
+  // Checked before sending the user to pay. Once they've paid, the deposit is credited even if
+  // the wallet has filled up meanwhile.
+  await assertCanReceive(prisma, userId, amount);
 
   const deposit = await prisma.deposit.create({
     data: { userId, reference: newReference(), amount, currency: DEPOSIT_CURRENCY },
@@ -138,6 +144,16 @@ const settleDeposit = async (deposit: Deposit, payment: VerifiedTransaction): Pr
         },
       });
       await tx.deposit.update({ where: { id: deposit.id }, data: { transactionId: credit.id } });
+      // The money is now held at Paystack, and owed to the user
+      await post(tx, {
+        type: JournalEntryType.DEPOSIT,
+        description: DEPOSIT_DESCRIPTION,
+        amount: deposit.amount,
+        debit: SYSTEM_ACCOUNTS.PAYSTACK_CLEARING,
+        credit: { wallet: deposit.userId },
+        reference: deposit.reference,
+        transactionId: credit.id,
+      });
       return credit;
     })
   );
@@ -157,6 +173,14 @@ const settleDeposit = async (deposit: Deposit, payment: VerifiedTransaction): Pr
     ledger.id
   );
   logger.info({ reference: deposit.reference, amount: deposit.amount.toString() }, "Deposit credited");
+  await notify({
+    userId: deposit.userId,
+    type: "money.received",
+    title: "Money added",
+    body: `${formatNaira(deposit.amount)} was added to your wallet${payment.channel ? ` (paid by ${payment.channel.replace(/_/g, " ")})` : ""}.`,
+    data: { transactionId: ledger.id, reference: deposit.reference },
+    actionPath: `/transactions/${ledger.id}`,
+  });
 };
 
 const markFailed = (depositId: string, reason: string) =>

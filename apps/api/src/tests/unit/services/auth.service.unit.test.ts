@@ -35,15 +35,79 @@ describe("auth.service", () => {
   });
 
   describe("findUserById", () => {
-    it("looks up by id and selects only public fields", async () => {
+    const row = (overrides: Record<string, unknown> = {}) => ({
+      id: "u1",
+      name: "Ada",
+      email: "ada@example.com",
+      createdAt: new Date(),
+      emailNotifications: true,
+      passwordChangedAt: null,
+      transactionPinHash: "$2a$10$hash",
+      pinLockedUntil: null,
+      ...overrides,
+    });
+
+    it("reports an active PIN lock and hides an expired one", async () => {
+      const until = new Date(Date.now() + 10 * 60_000);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(row({ pinLockedUntil: until }));
+      (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(row({ pinLockedUntil: new Date(Date.now() - 1000) }));
+
+      expect((await findUserById("u1"))?.pinLockedUntil).toEqual(until);
+      expect((await findUserById("u1"))?.pinLockedUntil).toBeNull();
+    });
+
+    it("includes when the password was last changed", async () => {
+      const changed = new Date("2026-10-10T12:00:00Z");
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(row({ passwordChangedAt: changed }));
+
+      expect((await findUserById("u1"))?.passwordChangedAt).toEqual(changed);
+    });
+
+    it("looks up by id and selects public fields plus own settings", async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
       await findUserById("u1");
 
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: "u1" },
-        select: publicFields,
+        select: {
+          ...publicFields,
+          emailNotifications: true,
+          aiInsightsEnabled: true,
+          passwordChangedAt: true,
+          role: true,
+          frozenAt: true,
+          emailVerifiedAt: true,
+          transactionPinHash: true,
+          pinLockedUntil: true,
+        },
       });
+    });
+
+    it("reports whether the email is verified, not when", async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(row({ emailVerifiedAt: new Date() }));
+      (prisma.user.findUnique as jest.Mock).mockResolvedValueOnce(row({ emailVerifiedAt: null }));
+
+      const verified = await findUserById("u1");
+      expect(verified?.emailVerified).toBe(true);
+      expect(verified).not.toHaveProperty("emailVerifiedAt");
+      expect((await findUserById("u1"))?.emailVerified).toBe(false);
+    });
+
+    it("reports hasPin without ever returning the PIN hash", async () => {
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: "u1",
+        name: "Ada",
+        email: "ada@example.com",
+        createdAt: new Date(),
+        emailNotifications: true,
+        transactionPinHash: "$2a$10$hash",
+      });
+
+      const profile = await findUserById("u1");
+
+      expect(profile).toMatchObject({ id: "u1", hasPin: true, emailNotifications: true });
+      expect(profile).not.toHaveProperty("transactionPinHash");
     });
   });
 });

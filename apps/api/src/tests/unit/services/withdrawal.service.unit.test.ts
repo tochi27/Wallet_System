@@ -4,6 +4,7 @@ import { scheduleWithdrawalCheck } from "../../../queues/payments.queue";
 import { enqueueTransactionEvent } from "../../../queues/transaction.queue";
 import { invalidateBalance } from "../../../utils/cache.utils";
 import { getIdempotencyRecord, saveIdempotencyRecord } from "../../../utils/idempotency.utils";
+import { post } from "../../../services/ledger/ledger.service";
 import { getActiveBankAccount } from "../../../services/payments/bank-account.service";
 import { initiateTransfer, PaystackError, verifyTransfer } from "../../../services/payments/paystack.client";
 import {
@@ -16,9 +17,20 @@ import {
 const tx = {
   wallet: { findUnique: jest.fn(), update: jest.fn() },
   transaction: { create: jest.fn(), update: jest.fn() },
-  withdrawal: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  withdrawal: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
 };
 
+// Limits have their own tests; here every payment is within them
+jest.mock("../../../services/limits.service", () => ({
+  ...jest.requireActual("../../../services/limits.service"),
+  assertCanSend: jest.fn().mockResolvedValue(undefined),
+  assertCanReceive: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../../services/ledger/ledger.service", () => ({
+  ...jest.requireActual("../../../services/ledger/ledger.service"),
+  post: jest.fn().mockResolvedValue({ id: "entry-1" }),
+  postReversal: jest.fn().mockResolvedValue({ id: "entry-2" }),
+}));
 jest.mock("../../../config/db", () => ({
   __esModule: true,
   default: {
@@ -39,6 +51,10 @@ jest.mock("../../../utils/lock.utils", () => ({
 jest.mock("../../../utils/cache.utils", () => ({ invalidateBalance: jest.fn() }));
 jest.mock("../../../queues/transaction.queue", () => ({ enqueueTransactionEvent: jest.fn() }));
 jest.mock("../../../queues/payments.queue", () => ({ scheduleWithdrawalCheck: jest.fn() }));
+jest.mock("../../../services/notifications/notification.service", () => ({
+  notify: jest.fn(),
+  formatNaira: (amount: unknown) => `NGN ${String(amount)}`,
+}));
 jest.mock("../../../utils/idempotency.utils", () => ({
   getIdempotencyRecord: jest.fn(),
   saveIdempotencyRecord: jest.fn(),
@@ -79,6 +95,7 @@ const withdrawal = (overrides: Record<string, unknown> = {}) => ({
   completedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  bankAccount: account,
   ...overrides,
 });
 
@@ -97,6 +114,9 @@ describe("withdrawal.service", () => {
       Promise.resolve(include ? { ...withdrawal(), bankAccount: account } : withdrawal())
     );
     tx.wallet.findUnique.mockResolvedValue({ userId: "user-1", balance: d(5000) });
+    (prisma.withdrawal.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    // Inside a database transaction the withdrawal is still in whatever state the test set up
+    tx.withdrawal.findUniqueOrThrow.mockImplementation(async () => (await prisma.withdrawal.findUnique({ where: { id: "wd-id" } })) ?? withdrawal());
   });
 
   // ── createWithdrawal ──────────────────────────────────────────────────────
@@ -138,6 +158,15 @@ describe("withdrawal.service", () => {
       expect(view.status).toBe(WithdrawalStatus.PROCESSING);
       expect(view.bankAccount).toEqual({ bankName: "Zenith Bank", accountNumberLast4: "1234", accountName: "ADA LOVELACE" });
       expect(saveIdempotencyRecord).toHaveBeenCalledWith("withdrawal:key-1", "user-1", view);
+      // Ledger: the money moves from the user's wallet to "payouts in transit"
+      expect(post).toHaveBeenCalledWith(tx, expect.objectContaining({
+        type: "WITHDRAWAL",
+        amount: 1000,
+        debit: { wallet: "user-1" },
+        credit: "payouts_in_transit",
+        reference,
+        transactionId: "debit-1",
+      }));
     });
 
     it("refuses when the balance is too low, before touching Paystack", async () => {
@@ -152,12 +181,20 @@ describe("withdrawal.service", () => {
     it("marks it successful when Paystack completes the transfer immediately", async () => {
       (initiateTransfer as jest.Mock).mockResolvedValue({ status: "success", transfer_code: "TRF_1", reference: "wd_ref" });
 
+      tx.withdrawal.updateMany.mockResolvedValue({ count: 1 });
+
       await createWithdrawal("user-1", "acct-1", 1000);
 
-      expect(prisma.withdrawal.updateMany).toHaveBeenCalledWith({
+      expect(tx.withdrawal.updateMany).toHaveBeenCalledWith({
         where: { id: "wd-id", status: WithdrawalStatus.PROCESSING },
         data: { status: WithdrawalStatus.SUCCESSFUL, completedAt: expect.any(Date) },
       });
+      // Paid out: it leaves "in transit" and our Paystack balance, in the same transaction
+      expect(post).toHaveBeenLastCalledWith(tx, expect.objectContaining({
+        type: "WITHDRAWAL_PAID",
+        debit: "payouts_in_transit",
+        credit: "paystack_clearing",
+      }));
     });
 
     it("refunds at once when Paystack rejects the transfer, with a neutral reason for merchant-side problems", async () => {
@@ -190,6 +227,12 @@ describe("withdrawal.service", () => {
         }),
       });
       expect(scheduleWithdrawalCheck).not.toHaveBeenCalled();
+      expect(post).toHaveBeenLastCalledWith(tx, expect.objectContaining({
+        type: "WITHDRAWAL_REFUND",
+        debit: "payouts_in_transit",
+        credit: { wallet: "user-1" },
+        transactionId: "refund-1",
+      }));
     });
 
     it("leaves it processing when the outcome is unknown (timeout), for the follow-up check", async () => {
@@ -224,11 +267,24 @@ describe("withdrawal.service", () => {
     it("marks a completed transfer as successful", async () => {
       (verifyTransfer as jest.Mock).mockResolvedValue({ status: "success", reason: null });
 
+      tx.withdrawal.updateMany.mockResolvedValue({ count: 1 });
+
       await confirmWithdrawal("wd_ref");
 
-      expect(prisma.withdrawal.updateMany).toHaveBeenCalledWith(
+      expect(tx.withdrawal.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: WithdrawalStatus.SUCCESSFUL }) })
       );
+      expect(post).toHaveBeenCalledWith(tx, expect.objectContaining({ type: "WITHDRAWAL_PAID" }));
+    });
+
+    it("records the payout in the ledger only once when checks race", async () => {
+      (verifyTransfer as jest.Mock).mockResolvedValue({ status: "success", reason: null });
+      tx.withdrawal.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+      await confirmWithdrawal("wd_ref");
+      await confirmWithdrawal("wd_ref");
+
+      expect(post).toHaveBeenCalledTimes(1);
     });
 
     it("refunds a failed transfer exactly once", async () => {
@@ -263,6 +319,12 @@ describe("withdrawal.service", () => {
           data: expect.objectContaining({ status: WithdrawalStatus.REVERSED }),
         })
       );
+      // It had already left Paystack, so the refund comes back through Paystack, not "in transit"
+      expect(post).toHaveBeenCalledWith(tx, expect.objectContaining({
+        type: "WITHDRAWAL_REFUND",
+        debit: "paystack_clearing",
+        credit: { wallet: "user-1" },
+      }));
     });
 
     it("leaves a still-pending transfer alone", async () => {
@@ -270,7 +332,7 @@ describe("withdrawal.service", () => {
 
       await confirmWithdrawal("wd_ref");
 
-      expect(prisma.withdrawal.updateMany).not.toHaveBeenCalled();
+      expect(tx.withdrawal.updateMany).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 

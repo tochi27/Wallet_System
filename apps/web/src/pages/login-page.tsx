@@ -64,6 +64,12 @@ export function LoginPage() {
               autoComplete="current-password"
               autoFocus={Boolean(state?.email)}
             />
+            <Link
+              to="/forgot-password"
+              className="-mt-4 self-end text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Forgot password?
+            </Link>
           </FieldGroup>
         </CardContent>
         <CardFooter className="mt-6 flex-col gap-4">

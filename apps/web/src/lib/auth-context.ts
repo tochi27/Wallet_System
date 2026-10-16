@@ -9,6 +9,8 @@ export type AuthContextValue = {
   error: Error | null
   retry: () => void
   signIn: (token: string) => void
+  // Swaps in a new token for the same user (after a password change) without reloading anything
+  replaceToken: (token: string) => void
   signOut: () => Promise<void>
 }
 

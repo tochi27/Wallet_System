@@ -1,0 +1,18 @@
+{
+  // Type-checks the Playwright browser tests (npm run typecheck:e2e); Playwright itself only strips types
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["e2e/**/*.ts", "e2e/**/*.mjs", "playwright.config.ts"]
+}

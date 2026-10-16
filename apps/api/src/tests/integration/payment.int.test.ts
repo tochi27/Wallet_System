@@ -26,6 +26,7 @@ jest.mock("../../middleware/auth.middleware", () => ({
   authenticate: (req: any, res: any, next: any) => {
     if (!req.headers.authorization) return res.status(401).json({ success: false, message: "No token provided" });
     req.userId = "user123";
+    req.emailVerified = true;
     next();
   },
 }));
@@ -57,6 +58,12 @@ jest.mock("../../services/payments/paystack-webhook.service", () => ({
 }));
 
 jest.mock("../../queues/paystack.queue", () => ({ enqueuePaystackEvent: jest.fn() }));
+
+jest.mock("../../services/security/pin.service", () => ({
+  ...jest.requireActual("../../services/security/pin.service"),
+  verifyPin: jest.fn(),
+}));
+
 
 const depositView = {
   reference: "dep_abc",
@@ -301,7 +308,7 @@ describe("Payments routes", () => {
         .post("/api/payments/withdrawals")
         .set(auth)
         .set("Idempotency-Key", "key-9")
-        .send({ bankAccountId: accountId, amount: 2500 });
+        .send({ bankAccountId: accountId, amount: 2500, pin: "1357" });
 
       expect(res.status).toBe(200);
       expect(createWithdrawal).toHaveBeenCalledWith("user123", accountId, 2500, "key-9");
@@ -324,7 +331,7 @@ describe("Payments routes", () => {
       const res = await request(app)
         .post("/api/payments/withdrawals")
         .set(auth)
-        .send({ bankAccountId: accountId, amount: 2500 });
+        .send({ bankAccountId: accountId, amount: 2500, pin: "1357" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Insufficient funds");

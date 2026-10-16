@@ -1,4 +1,4 @@
-# Wallet System — Frontend Integration Guide
+# PurpleWallet — Frontend Integration Guide
 
 Base URL: `https://wallet-system-api-16cv.onrender.com`  
 Swagger UI: `https://wallet-system-api-16cv.onrender.com/api-docs`
@@ -86,6 +86,122 @@ Authorization: Bearer <token>
 ```
 
 This blacklists the token immediately. Clear it from your app's state on success.
+
+---
+
+### Forgot Password
+
+```http
+POST /api/auth/forgot-password
+Content-Type: application/json
+
+{ "email": "jane@example.com" }
+```
+
+Always `200` with the same message, whether or not the email has an account. If it does, the user gets an email linking to `APP_URL/reset-password?token=…`. Read `token` from the query string and send it with the new password:
+
+```http
+POST /api/auth/reset-password
+Content-Type: application/json
+
+{ "token": "<from the link>", "password": "newSecurePassword456" }
+```
+
+The link works once and expires after 30 minutes (`400` otherwise). A reset signs out every existing session, so send the user to log in afterwards.
+
+---
+
+### Email Verification
+
+Signup emails the user a link to `APP_URL/verify-email?token=…` (without `RESEND_API_KEY` in development, the link is printed in the API log). Until they follow it, `GET /api/auth/me` reports `"emailVerified": false` and every way of moving money (adding money, transfers, withdrawals, looking up and saving bank accounts) returns `403`, never `401`. Viewing the wallet and settings still works. Read `token` from the query string and send it, signed in or not:
+
+```http
+POST /api/auth/verify-email
+Content-Type: application/json
+
+{ "token": "<from the link>" }
+```
+
+`200` with `data.status` `verified`, or `already_verified` if the link was already used to verify. `400` if the link is invalid or expired (24 hours). A signed-in user can ask for a new link with `POST /api/auth/resend-verification`: `429` within 2 minutes of the last one or after 5 in a day, `409` if already verified.
+
+---
+
+### Limits and Tiers
+
+Every verified account is on **Tier 1**. Users move to **Tier 2** by sending their ID for review (below); staff can also change a tier directly from the admin console. `GET /api/account/limits` returns the user's tier, limits and today's usage:
+
+```json
+{
+  "tier": "TIER_1",
+  "emailVerified": true,
+  "perTransaction": "50000.00",
+  "daily": { "limit": "200000.00", "used": "25000.00", "remaining": "175000.00", "resetsAt": "2026-10-15T23:00:00.000Z" },
+  "balance": { "max": "500000.00", "current": "450000.00", "room": "50000.00" }
+}
+```
+
+| | Per transfer or withdrawal | Sent + withdrawn per day | Wallet balance |
+|---|---|---|---|
+| Tier 1 | ₦50,000 | ₦200,000 | ₦500,000 |
+| Tier 2 | ₦500,000 | ₦2,000,000 | No cap |
+
+The day runs midnight to midnight Nigerian time. A transfer or withdrawal over a limit, or a deposit that would take the wallet past its cap, returns `400` with a message saying how much is left (show it as is). A withdrawal that fails and is refunded gives its allowance back. Money that has already been paid (a completed deposit, a transfer from someone else) is always credited, even past the cap.
+
+#### Upgrading to Tier 2
+
+`GET /api/account/upgrade` returns `{ tier, canApply, latest }`. Show an upgrade button when `canApply` is true (verified email, Tier 1, nothing pending), and `latest.rejection.label` / `.message` after a rejection. Send the ID as `multipart/form-data`:
+
+| Field | |
+|---|---|
+| `legalName` | Full name as on the ID |
+| `dateOfBirth` | `YYYY-MM-DD`, at least 18 years ago |
+| `idType` | `NIN_SLIP`, `NATIONAL_ID`, `DRIVERS_LICENCE`, `PASSPORT` or `VOTERS_CARD` |
+| `idNumber` | NIN: 11 digits · passport: a letter and 8 digits · VIN: 19 characters · licence: as printed (spaces and dashes are ignored) |
+| `ID_FRONT` | Photo (JPEG/PNG) or PDF, up to 5 MB |
+| `ID_BACK` | Required for `NATIONAL_ID`, `DRIVERS_LICENCE` and `VOTERS_CARD` |
+| `SELFIE` | A photo of the user holding the ID (not a PDF) |
+
+`201` when sent; `400` with a message to show for invalid details or files; `409` if already Tier 2 or a request is pending. The user gets a notification when staff approve (they move to Tier 2 straight away) or reject it.
+
+---
+
+### Change Password
+
+```http
+PUT /api/account/password
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "currentPassword": "securePassword123", "newPassword": "newSecurePassword456" }
+```
+
+Every session is signed out, including the one that made the request, and the response's `data.token` is a fresh token: replace the stored one with it. A wrong current password is `400`, not `401`.
+
+---
+
+### Transaction PIN (required for transfers and withdrawals)
+
+Users set a 4-digit PIN once, with their password:
+
+```http
+POST /api/account/pin
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "password": "securePassword123", "pin": "7391" }
+```
+
+Every `POST /api/wallet/transfer` and `POST /api/payments/withdrawals` must then include `"pin": "7391"` in its body. Responses when the PIN is the problem (none of them 401, so they never sign the user out):
+
+| Status | Meaning |
+|:-------|:--------|
+| `400` | Missing or wrong PIN ("Incorrect PIN. 4 attempts left.") |
+| `403` | No PIN set yet — send the user to set one |
+| `423` | Locked for 30 minutes after 5 wrong PINs |
+
+**Frozen accounts.** An admin can put an account on hold. `GET /api/auth/me` then reports `"frozen": true`, and transfers, withdrawals and saving bank accounts return `403` (not `401`). The user can still sign in, view their wallet and receive money; show them a notice to contact support. `/me` also reports `role` (`USER` or `ADMIN`).
+
+`GET /api/auth/me` reports `hasPin`. Change a PIN with `PUT /api/account/pin` and `{ "currentPin": "7391", "newPin": "…" }` (or `"password"` instead of `currentPin` if it's forgotten).
 
 ---
 
@@ -347,7 +463,7 @@ All errors follow this shape:
 | Status | Meaning |
 |:-------|:--------|
 | `400` | Bad request (validation error, insufficient balance) |
-| `401` | Missing, invalid, expired, or logged-out token — clear it and send the user to log in |
+| `401` | Missing, invalid, expired, or logged-out token, or one issued before a password change — clear it and send the user to log in |
 | `404` | Resource not found |
 | `409` | Conflict (e.g. duplicate operation) |
 | `429` | Rate limited — slow down requests |
@@ -393,6 +509,37 @@ Content-Type: application/json
 ```
 
 Payloads are signed with HMAC-SHA256. Verify the `X-Webhook-Signature` header on receipt to confirm authenticity.
+
+---
+
+## AI Spending Insights (opt-in)
+
+1. Ask the user first, then opt in: `PATCH /api/account/preferences` with `{ "aiInsightsEnabled": true, "timezone": "Africa/Lagos" }`. `GET /api/auth/me` reports `aiInsightsEnabled`.
+2. `GET /api/insights?timezone=Africa/Lagos` returns `{ enabled, refreshing, insight }`. While `refreshing` is true, poll every few seconds; the first insights take a few seconds to appear.
+3. `POST /api/insights/refresh` regenerates on demand (5 a day; `429` after that).
+4. Transactions carry `category` (`FOOD`, `BILLS`, `TRANSPORT`, `SHOPPING`, `ENTERTAINMENT`, `HEALTH`, `FAMILY_FRIENDS`, `SAVINGS`, `OTHER` or `null`) and `categorySource` (`AI` or `USER`). Let users correct it with `PATCH /api/wallet/transactions/:id/category` and `{ "category": "FOOD" }`; their choice is never overwritten.
+
+Opting out (`"aiInsightsEnabled": false`) deletes the stored insights. The same switch ("AI features") also enables the assistant.
+
+### AI Assistant
+
+```http
+POST /api/assistant
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "message": "How much did I spend on food this month?", "history": [], "timezone": "Africa/Lagos" }
+```
+
+Keep the conversation on the client and send the recent turns as `history` (`{ role: "user" | "assistant", text }`). The response has `answer`, `transactions` (show them as evidence, each linking to its receipt), and an optional `action`: `send_money` (pre-fill your Send form with `recipientEmail` and `amount`) or `withdraw` (pre-fill the amount). Never act on it automatically; the user confirms with their PIN as usual. Errors: `403` AI features off, `429` 30 questions a day used, `503` AI unavailable.
+
+---
+
+## Receipts, Statements and Notifications
+
+- `GET /api/wallet/transactions/:id` — one transaction with context (the other party's name for transfers, the Paystack deposit or withdrawal behind it, reversal links).
+- `GET /api/wallet/statement?from=2026-10-01&to=2026-10-31&format=pdf&timezone=Africa/Lagos` — a downloadable statement (`pdf` or `csv`), up to one year. The filename is in `Content-Disposition`.
+- `GET /api/account/notifications` — the latest 30 notifications and `unreadCount`; mark them read with `POST /api/account/notifications/read-all` or `/:id/read`.
 
 ---
 

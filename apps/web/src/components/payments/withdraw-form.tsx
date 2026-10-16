@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { AlertCircleIcon, LandmarkIcon, Loader2Icon, PlusIcon } from "lucide-react"
+import { AlertCircleIcon, LandmarkIcon, PlusIcon } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { MIN_WITHDRAWAL, paymentKeys, startWithdrawal, useBankAccounts, type BankAccount } from "@/api/payments"
@@ -14,7 +14,11 @@ import { DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 import { FieldGroup } from "@/components/ui/field"
 import { Skeleton } from "@/components/ui/skeleton"
 import { errorMessage } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
 import { useIdempotencyKey } from "@/lib/idempotency"
+import { pinErrorKind } from "@/lib/pin"
+import { PinConfirmStep } from "@/components/security/pin-confirm-step"
+import { SetPinForm } from "@/components/security/set-pin-form"
 import { formatMoney } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { withdrawalSchema, type WithdrawalValues } from "@/schemas/wallet"
@@ -26,7 +30,7 @@ const FRIENDLY_ERRORS: Record<string, string> = {
 }
 
 // Withdraw dialog body: choose a saved bank account (or add one), then an amount
-export function WithdrawForm({ onDone }: { onDone: () => void }) {
+export function WithdrawForm({ onDone, initialAmount }: { onDone: () => void; initialAmount?: number }) {
   const { data: accounts, isPending } = useBankAccounts()
   const [adding, setAdding] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -69,6 +73,7 @@ export function WithdrawForm({ onDone }: { onDone: () => void }) {
       onSelect={setSelectedId}
       onAddAccount={accounts!.length < MAX_BANK_ACCOUNTS ? () => setAdding(true) : undefined}
       onDone={onDone}
+      initialAmount={initialAmount}
     />
   )
 }
@@ -79,28 +84,35 @@ type AmountStepProps = {
   onSelect: (id: string) => void
   onAddAccount?: () => void
   onDone: () => void
+  initialAmount?: number
 }
 
-function AmountStep({ accounts, selected, onSelect, onAddAccount, onDone }: AmountStepProps) {
+function AmountStep({ accounts, selected, onSelect, onAddAccount, onDone, initialAmount }: AmountStepProps) {
   const queryClient = useQueryClient()
   const { data: balance } = useBalance()
   const { key, renew, renewIfRejected } = useIdempotencyKey()
+  const { user } = useAuth()
   // Set when Paystack refused the transfer outright; the money is already back in the wallet
   const [refunded, setRefunded] = useState<string | null>(null)
+  // details → (set-pin, first time only) → pin → done
+  const [step, setStep] = useState<"details" | "set-pin" | "pin">("details")
+  const [pending, setPending] = useState<WithdrawalValues | null>(null)
 
   const form = useForm<WithdrawalValues>({
     resolver: zodResolver(withdrawalSchema),
-    defaultValues: { amount: "" },
+    defaultValues: { amount: initialAmount ? String(initialAmount) : "" },
   })
 
   const mutation = useMutation({
-    mutationFn: (values: WithdrawalValues) => startWithdrawal(selected.id, Number(values.amount), key),
+    mutationFn: ({ values, pin }: { values: WithdrawalValues; pin: string }) =>
+      startWithdrawal(selected.id, Number(values.amount), pin, key),
     onSuccess: (withdrawal) => {
       void queryClient.invalidateQueries({ queryKey: walletKeys.all })
       void queryClient.invalidateQueries({ queryKey: paymentKeys.withdrawals })
       if (withdrawal.status === "FAILED" || withdrawal.status === "REVERSED") {
         setRefunded(withdrawal.failureReason ?? "The transfer didn't go through")
         renew()
+        setStep("details")
         return
       }
       toast.success(
@@ -108,8 +120,14 @@ function AmountStep({ accounts, selected, onSelect, onAddAccount, onDone }: Amou
       )
       onDone()
     },
-    onError: renewIfRejected,
+    onError: (error) => {
+      renewIfRejected(error)
+      const kind = pinErrorKind(error)
+      if (kind === "not-set") setStep("set-pin")
+      else if (kind === "other") setStep("details")
+    },
   })
+  const errorKind = mutation.isError ? pinErrorKind(mutation.error) : null
 
   // Any edit clears messages about the previous attempt
   const { isError, reset: clearError } = mutation
@@ -124,15 +142,57 @@ function AmountStep({ accounts, selected, onSelect, onAddAccount, onDone }: Amou
     })
   }, [form, isError, refunded, clearError])
 
+  if (step === "set-pin") {
+    return (
+      <div className="flex flex-col gap-6">
+        <DialogHeader>
+          <DialogTitle>Set your transaction PIN</DialogTitle>
+          <DialogDescription>You'll use it to approve every withdrawal and transfer.</DialogDescription>
+        </DialogHeader>
+        <SetPinForm onDone={() => setStep("pin")} onCancel={() => setStep("details")} />
+      </div>
+    )
+  }
+
+  if (step === "pin" && pending) {
+    return (
+      <PinConfirmStep
+        title="Confirm withdrawal"
+        summary={
+          <>
+            Withdraw <strong>{formatMoney(pending.amount)}</strong> to {selected.bankName} ••{selected.accountNumberLast4}
+          </>
+        }
+        confirmLabel="Withdraw"
+        pending={mutation.isPending}
+        error={errorKind === "pin" ? errorMessage(mutation.error) : null}
+        onSubmit={(pin) => mutation.mutate({ values: pending, pin })}
+        onBack={() => {
+          mutation.reset()
+          setStep("details")
+        }}
+      />
+    )
+  }
+
   return (
-    <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))} noValidate className="flex flex-col gap-6">
+    <form
+      onSubmit={form.handleSubmit((values) => {
+        mutation.reset()
+        setRefunded(null)
+        setPending(values)
+        setStep(user?.hasPin ? "pin" : "set-pin")
+      })}
+      noValidate
+      className="flex flex-col gap-6"
+    >
       <DialogHeader>
         <DialogTitle>Withdraw</DialogTitle>
         <DialogDescription>Send money from your wallet to your bank account.</DialogDescription>
       </DialogHeader>
 
       <FieldGroup>
-        {mutation.isError && (
+        {errorKind === "other" && (
           <Alert variant="destructive">
             <AlertCircleIcon aria-hidden />
             <AlertDescription>
@@ -216,10 +276,7 @@ function AmountStep({ accounts, selected, onSelect, onAddAccount, onDone }: Amou
             Cancel
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending && <Loader2Icon className="animate-spin" aria-hidden />}
-          Withdraw
-        </Button>
+        <Button type="submit">Continue</Button>
       </DialogFooter>
     </form>
   )

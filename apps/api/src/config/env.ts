@@ -53,6 +53,34 @@ const envSchema = z.object({
   // still use the real (test) API. Refused in production and with a live key — see below.
   PAYSTACK_SIMULATE_PAYOUTS: z.stringbool().default(false),
 
+  // Email (Resend). Without a key, emails are logged instead of sent.
+  RESEND_API_KEY: z.preprocess((value) => (value === "" ? undefined : value), z.string().optional()),
+  // Must be an address on a domain verified in Resend; Resend's shared sender works only
+  // for emailing your own account address while developing
+  EMAIL_FROM: z.string().default("PurpleWallet <onboarding@resend.dev>"),
+  // The web app's address, for links in emails
+  APP_URL: z.url().default("http://localhost:5173"),
+
+  // AI spending insights (Google Gemini). Without a key, insights use template sentences.
+  GEMINI_API_KEY: z.preprocess((value) => (value === "" ? undefined : value), z.string().optional()),
+  // Writes the insight text
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.8-flash"),
+  // Categorises transactions; also the fallback writer. A separate model has its own free-tier quota.
+  GEMINI_CATEGORY_MODEL: z.string().min(1).default("gemini-3.5-flash-lite"),
+
+  // Encrypts ID documents and numbers sent with tier upgrade requests: 32 random bytes, base64
+  // (generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))").
+  // Required in production. Changing it makes existing documents unreadable.
+  KYC_ENCRYPTION_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .refine((value) => Buffer.from(value, "base64").length === 32, "KYC_ENCRYPTION_KEY must be 32 bytes, base64-encoded")
+      .optional()
+  ),
+  // Where the app's "Help & support" link sends users. Defaults to the EMAIL_FROM address.
+  SUPPORT_EMAIL: z.preprocess((value) => (value === "" ? undefined : value), z.email().optional()),
+
   // Endpoints that move money with no real payment behind them: POST /api/wallet/credit,
   // POST /api/wallet/debit and user-initiated reversals. On by default outside production (for
   // development and tests); off in production unless explicitly set to true.
@@ -74,6 +102,10 @@ const parsed = envSchema
       path: ["PAYSTACK_SIMULATE_PAYOUTS"],
     }
   )
+  .refine((config) => config.NODE_ENV !== "production" || config.KYC_ENCRYPTION_KEY !== undefined, {
+    message: "KYC_ENCRYPTION_KEY is required in production",
+    path: ["KYC_ENCRYPTION_KEY"],
+  })
   .transform((config) => ({
     ...config,
     DIRECT_FUNDING_ENABLED: config.DIRECT_FUNDING_ENABLED ?? config.NODE_ENV !== "production",

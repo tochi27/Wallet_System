@@ -1,3 +1,4 @@
+import { post } from "../../../services/ledger/ledger.service";
 import { DepositStatus, Prisma, TransactionStatus, TransactionType } from "@prisma/client";
 import prisma from "../../../config/db";
 import { enqueueTransactionEvent } from "../../../queues/transaction.queue";
@@ -19,6 +20,17 @@ const tx = {
   transaction: { create: jest.fn() },
 };
 
+// Limits have their own tests; here every payment is within them
+jest.mock("../../../services/limits.service", () => ({
+  ...jest.requireActual("../../../services/limits.service"),
+  assertCanSend: jest.fn().mockResolvedValue(undefined),
+  assertCanReceive: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../../services/ledger/ledger.service", () => ({
+  ...jest.requireActual("../../../services/ledger/ledger.service"),
+  post: jest.fn().mockResolvedValue({ id: "entry-1" }),
+  postReversal: jest.fn().mockResolvedValue({ id: "entry-2" }),
+}));
 jest.mock("../../../config/db", () => ({
   __esModule: true,
   default: {
@@ -43,6 +55,10 @@ jest.mock("../../../utils/lock.utils", () => ({
   withLock: jest.fn((_userId: string, fn: () => Promise<unknown>) => fn()),
 }));
 jest.mock("../../../utils/cache.utils", () => ({ invalidateBalance: jest.fn() }));
+jest.mock("../../../services/notifications/notification.service", () => ({
+  notify: jest.fn(),
+  formatNaira: (amount: unknown) => `NGN ${String(amount)}`,
+}));
 jest.mock("../../../queues/transaction.queue", () => ({ enqueueTransactionEvent: jest.fn() }));
 jest.mock("../../../utils/idempotency.utils", () => ({
   getIdempotencyRecord: jest.fn(),
@@ -193,6 +209,15 @@ describe("deposit.service", () => {
         expect.objectContaining({ event: "CREDIT", transactionId: "ledger-1" }),
         "ledger-1"
       );
+      // Ledger: we now hold the money at Paystack, and owe it to the user
+      expect(post).toHaveBeenCalledWith(tx, expect.objectContaining({
+        type: "DEPOSIT",
+        amount: d("5000.00"),
+        debit: "paystack_clearing",
+        credit: { wallet: "user-1" },
+        reference: "dep_ref",
+        transactionId: "ledger-1",
+      }));
     });
 
     it("does not credit again when another confirmation already claimed the deposit", async () => {

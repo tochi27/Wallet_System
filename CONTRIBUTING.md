@@ -1,4 +1,4 @@
-# Contributing to Wallet System
+# Contributing to PurpleWallet
 
 Thank you for considering contributing! This document outlines how to get set up and how to submit changes.
 
@@ -29,10 +29,16 @@ The API will be available at `http://localhost:4000` and Swagger docs at `http:/
 
 ## Running Tests
 
-All tests are fully mocked — no running database or Redis required.
+API tests are fully mocked — no running database or Redis required:
 
 ```bash
 npm run test:api
+```
+
+Browser tests drive the real app in Chrome against a throwaway `wallet_e2e` database (Docker must be running; your development data isn't touched):
+
+```bash
+npm run test:e2e
 ```
 
 All tests must pass before a PR is accepted. TypeScript must also compile without errors:
@@ -52,7 +58,7 @@ npm run build:api
 
 1. Fork the repo and create a branch off `wallet-dev`: `git checkout -b feat/your-feature`
 2. Make your changes and add tests for new behaviour
-3. Run `npm run test:api` — all tests must pass
+3. Run `npm run test:api` and `npm run test:e2e` — all tests must pass (add a browser test for new user-facing flows)
 4. Run `npm run build:api` — TypeScript must compile without errors
 5. Open a PR against `wallet-dev` with a clear title and description explaining the *why* of the change
 

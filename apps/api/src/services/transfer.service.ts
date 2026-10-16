@@ -1,15 +1,48 @@
 import { randomUUID } from "crypto";
-import { TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
+import { JournalEntryType, TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
 import prisma from "../config/db";
 import { getIdempotencyRecord, saveIdempotencyRecord } from "../utils/idempotency.utils";
 import { withMultiLock } from "../utils/lock.utils";
 import { invalidateBalance } from "../utils/cache.utils";
 import { enqueueTransactionEvent } from "../queues/transaction.queue";
+import { post } from "./ledger/ledger.service";
+import { assertCanSend } from "./limits.service";
+import { formatNaira, notify } from "./notifications/notification.service";
 
 type TransferResult = {
   transferId: string;
   sender: Transaction;
   receiver: Transaction;
+};
+
+// Tells both sides; failures are swallowed inside notify(), so they can't affect the transfer
+const notifyTransfer = async (
+  senderId: string,
+  receiver: { id: string; name: string },
+  result: TransferResult,
+  note?: string
+) => {
+  const sender = await prisma.user.findUnique({ where: { id: senderId }, select: { name: true } });
+  const amount = formatNaira(result.sender.amount);
+  const withNote = note ? ` Note: "${note}".` : "";
+  await Promise.all([
+    notify({
+      userId: senderId,
+      type: "money.sent",
+      title: "Transfer sent",
+      body: `You sent ${amount} to ${receiver.name}.${withNote}`,
+      data: { transactionId: result.sender.id, transferId: result.transferId },
+      actionPath: `/transactions/${result.sender.id}`,
+    }),
+    notify({
+      userId: receiver.id,
+      type: "money.received",
+      title: "Money received",
+      body: `${sender?.name ?? "Someone"} sent you ${amount}.${withNote}`,
+      data: { transactionId: result.receiver.id, transferId: result.transferId },
+      actionPath: `/transactions/${result.receiver.id}`,
+    }),
+  ]);
 };
 
 export const transferFunds = async (
@@ -67,6 +100,8 @@ export const transferFunds = async (
         if (new Prisma.Decimal(senderWallet.balance).lt(amount)) {
           throw new Error("Insufficient funds");
         }
+        // Inside the lock and transaction, so two transfers at once can't both fit under the limit
+        await assertCanSend(tx, senderId, amount);
 
         const receiverWallet = await tx.wallet.findUnique({ where: { userId: receiver.id } });
         if (!receiverWallet) throw new Error("Receiver wallet not found");
@@ -91,6 +126,16 @@ export const transferFunds = async (
             data: { status: TransactionStatus.SUCCESSFUL, balanceBefore: receiverBefore, balanceAfter: receiverAfter },
           }),
         ]);
+
+        await post(tx, {
+          type: JournalEntryType.TRANSFER,
+          description: "Transfer between wallets",
+          amount,
+          debit: { wallet: senderId },
+          credit: { wallet: receiver.id },
+          reference: transferId,
+          transactionId: senderTx.id,
+        });
 
         return { transferId, sender: senderTx, receiver: receiverTx };
       });
@@ -120,6 +165,7 @@ export const transferFunds = async (
       await saveIdempotencyRecord(idempotencyKey, senderId, result);
     }
 
+    await notifyTransfer(senderId, receiver, result, description);
     return result;
   } catch (error) {
     await Promise.all([

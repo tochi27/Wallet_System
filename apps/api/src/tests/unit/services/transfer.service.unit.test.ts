@@ -1,3 +1,4 @@
+import { post } from "../../../services/ledger/ledger.service";
 import { Prisma, TransactionStatus, TransactionType } from "@prisma/client";
 import prisma from "../../../config/db";
 import { withMultiLock } from "../../../utils/lock.utils";
@@ -9,6 +10,17 @@ import {
 } from "../../../utils/idempotency.utils";
 import { transferFunds } from "../../../services/transfer.service";
 
+// Limits have their own tests; here every payment is within them
+jest.mock("../../../services/limits.service", () => ({
+  ...jest.requireActual("../../../services/limits.service"),
+  assertCanSend: jest.fn().mockResolvedValue(undefined),
+  assertCanReceive: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("../../../services/ledger/ledger.service", () => ({
+  ...jest.requireActual("../../../services/ledger/ledger.service"),
+  post: jest.fn().mockResolvedValue({ id: "entry-1" }),
+  postReversal: jest.fn().mockResolvedValue({ id: "entry-2" }),
+}));
 jest.mock("../../../config/db", () => ({
   __esModule: true,
   default: {
@@ -119,6 +131,13 @@ describe("transfer.service — unit", () => {
         expect.objectContaining({ event: "TRANSFER", senderId: "sender-001" }),
         expect.any(String)
       );
+      // Ledger: straight from the sender's wallet account to the receiver's
+      expect(post).toHaveBeenCalledWith(mockTxClient, expect.objectContaining({
+        type: "TRANSFER",
+        debit: { wallet: "sender-001" },
+        credit: { wallet: "receiver-001" },
+        reference: res.transferId,
+      }));
     });
   });
 

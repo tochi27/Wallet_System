@@ -21,17 +21,57 @@ enum TransactionStatus {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  name         String
-  email        String        @unique
-  password     String
-  wallet       Wallet?
-  transactions Transaction[]
-  webhooks     Webhook[]
-  deposits     Deposit[]
-  bankAccounts BankAccount[]
-  withdrawals  Withdrawal[]
-  createdAt    DateTime      @default(now())
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  password      String
+  wallet        Wallet?
+  transactions  Transaction[]
+  webhooks      Webhook[]
+  deposits      Deposit[]
+  bankAccounts  BankAccount[]
+  withdrawals   Withdrawal[]
+  notifications Notification[]
+  knownDevices  KnownDevice[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  // Tokens issued before this moment are rejected, so a password change signs out every device
+  passwordChangedAt DateTime?
+
+  // Set when the user follows the link in their verification email. Money can't move until then.
+  emailVerifiedAt DateTime?
+
+  // Sets how much money can move: see src/config/limits.ts. Raised by staff, never by the user.
+  tier AccountTier @default(TIER_1)
+  upgradeRequests  TierUpgradeRequest[] @relation("UpgradeApplicant")
+  upgradeReviews   TierUpgradeRequest[] @relation("UpgradeReviewer")
+
+  // Staff roles can use /api/admin. The first OWNER is made by the admin:grant script; after that
+  // owners grant roles from the admin console.
+  role Role @default(USER)
+
+  // A frozen account can sign in and see its wallet but can't move money out
+  frozenAt     DateTime?
+  frozenReason String?
+  adminActions AdminAuditLog[] @relation("AdminActor")
+  ledgerAccount       LedgerAccount?
+  adjustments         Adjustment[]   @relation("AdjustedUser")
+  adjustmentsRequested Adjustment[]  @relation("AdjustmentRequester")
+  adjustmentsDecided  Adjustment[]   @relation("AdjustmentDecider")
+
+  // Transaction PIN: required for transfers and withdrawals. Only a bcrypt hash is stored.
+  transactionPinHash String?
+  pinFailedAttempts  Int       @default(0)
+  pinLockedUntil     DateTime?
+
+  // Emails about money movement; security alerts are always sent
+  emailNotifications Boolean  @default(true)
+  // AI insights are opt-in: nothing is sent to the AI provider until the user agrees
+  aiInsightsEnabled   Boolean   @default(false)
+  aiInsightsConsentAt DateTime?
+  spendingInsight     SpendingInsight?
+  createdAt          DateTime @default(now())
 }
 
 model Wallet {
@@ -54,6 +94,9 @@ model Transaction {
   transferId    String?
   reversalOf    String?
   timestamp     DateTime          @default(now())
+  // Spending category for money out. AI-suggested unless the user picked one (USER always wins).
+  category       SpendingCategory?
+  categorySource CategorySource?
   user          User              @relation(fields: [userId], references: [id])
 
   @@index([transferId])
@@ -193,4 +236,317 @@ model Withdrawal {
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+}
+
+// In-app notification (also emailed when the user allows it, or always for security alerts)
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+// Browsers/devices a user has signed in from, so a sign-in from a new one can be flagged
+model KnownDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  fingerprint String
+  label       String
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, fingerprint])
+}
+
+// Forgot-password links. Only a SHA-256 hash of the token is stored, so a database leak can't
+// be used to reset anyone's password. Each token works once and expires after 30 minutes.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// Like PasswordResetToken: only a hash of the emailed token is stored, and each link works once
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// What the user can move. TIER_1 is every verified account; staff raise an account to TIER_2
+// (standing in for an ID check until there's a KYC provider). The amounts are in src/config/limits.ts.
+enum AccountTier {
+  TIER_1
+  TIER_2
+}
+
+// A user's request to move up to Tier 2 by proving who they are. Staff compare the details and
+// photos with the account, then approve (the user moves to Tier 2) or reject with a reason. At
+// most one PENDING request per user (a partial unique index in the migration).
+model TierUpgradeRequest {
+  id                 String                  @id @default(uuid())
+  userId             String
+  status             UpgradeStatus           @default(PENDING)
+  legalName          String
+  dateOfBirth        DateTime                @db.Date
+  idType             KycIdType
+  // AES-256-GCM encrypted (see services/kyc/crypto.ts); the last 4 digits are kept for lists
+  idNumberEncrypted  String
+  idNumberLast4      String
+  rejectionReason    UpgradeRejectionReason?
+  // Shown to the user with a rejection
+  reviewMessage      String?
+  reviewedById       String?
+  reviewedAt         DateTime?
+  // Documents of rejected requests are deleted after 30 days; the request row stays as a record
+  documentsDeletedAt DateTime?
+  createdAt          DateTime                @default(now())
+  user               User                    @relation("UpgradeApplicant", fields: [userId], references: [id])
+  reviewedBy         User?                   @relation("UpgradeReviewer", fields: [reviewedById], references: [id])
+  documents          KycDocument[]
+
+  @@index([status, createdAt])
+  @@index([userId])
+}
+
+// An ID photo or selfie, encrypted. Never served publicly: only reviewers can fetch it, and every
+// view is audited.
+model KycDocument {
+  id        String             @id @default(uuid())
+  requestId String
+  kind      KycDocumentKind
+  mimeType  String
+  size      Int
+  // Of the cleaned (re-encoded) file, before encryption
+  sha256    String
+  // iv (12 bytes) + auth tag (16 bytes) + ciphertext
+  data      Bytes
+  createdAt DateTime           @default(now())
+  request   TierUpgradeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, kind])
+}
+
+enum UpgradeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum KycIdType {
+  NIN_SLIP
+  NATIONAL_ID
+  DRIVERS_LICENCE
+  PASSPORT
+  VOTERS_CARD
+}
+
+enum KycDocumentKind {
+  ID_FRONT
+  ID_BACK
+  SELFIE
+}
+
+enum UpgradeRejectionReason {
+  BLURRY_PHOTO
+  NAME_MISMATCH
+  EXPIRED_ID
+  SELFIE_MISMATCH
+  WRONG_DOCUMENT
+  OTHER
+}
+
+// USER is a customer. Every other role is staff with access to /api/admin, each with more powers:
+// VIEWER reads; SUPPORT also manages accounts; FINANCE also adjusts balances; OWNER also manages staff.
+enum Role {
+  USER
+  VIEWER
+  SUPPORT
+  FINANCE
+  OWNER
+}
+
+// Every admin action, with who did it and why. Append-only: a database trigger rejects updates
+// and deletes, so the history can't be rewritten even by buggy code.
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  // Null when the action didn't come from a signed-in admin (e.g. the admin:grant script)
+  adminId    String?
+  action     String
+  targetType String
+  targetId   String
+  reason     String
+  details    Json?
+  createdAt  DateTime @default(now())
+  admin      User?    @relation("AdminActor", fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+enum SpendingCategory {
+  FOOD
+  BILLS
+  TRANSPORT
+  SHOPPING
+  ENTERTAINMENT
+  HEALTH
+  FAMILY_FRIENDS
+  SAVINGS
+  OTHER
+}
+
+enum CategorySource {
+  AI
+  USER
+}
+
+enum InsightSource {
+  AI
+  TEMPLATE
+}
+
+// The latest insights for a user, regenerated at most daily. Every number in `content` was
+// calculated by our code (`facts`); the AI only words it.
+model SpendingInsight {
+  id          String        @id @default(uuid())
+  userId      String        @unique
+  periodFrom  String
+  periodTo    String
+  facts       Json
+  content     Json
+  source      InsightSource
+  model       String?
+  generatedAt DateTime      @default(now())
+  user        User          @relation(fields: [userId], references: [id])
+}
+
+// ── Double-entry ledger ─────────────────────────────────────────────────────
+// Every money movement is a journal entry whose lines sum to zero. Amounts are signed: positive is
+// a debit, negative a credit. Assets (money we hold) grow with debits; liabilities (what we owe
+// users) grow with credits, so a wallet's balance is minus the sum of its lines. The database
+// rejects an unbalanced entry and any edit or deletion (see the ledger migration).
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  // "wallet:<userId>" for user wallets; fixed codes like "paystack_clearing" for system accounts
+  code      String            @unique
+  name      String
+  type      LedgerAccountType
+  userId    String?           @unique
+  createdAt DateTime          @default(now())
+  user      User?             @relation(fields: [userId], references: [id])
+  lines     LedgerLine[]
+}
+
+enum JournalEntryType {
+  OPENING_BALANCE
+  DEPOSIT
+  TRANSFER
+  WITHDRAWAL
+  WITHDRAWAL_PAID
+  WITHDRAWAL_REFUND
+  REVERSAL
+  ADJUSTMENT
+  DIRECT_FUNDING
+}
+
+model JournalEntry {
+  id            String           @id @default(uuid())
+  type          JournalEntryType
+  description   String
+  // The business reference: deposit or withdrawal reference, transfer id, adjustment id
+  reference     String?
+  // The user-facing transaction this entry belongs to, if any
+  transactionId String?
+  // The admin behind it, for adjustments
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  lines         LedgerLine[]
+
+  @@index([reference])
+  @@index([transactionId])
+  @@index([createdAt])
+}
+
+model LedgerLine {
+  id        String        @id @default(uuid())
+  entryId   String
+  accountId String
+  amount    Decimal       @db.Decimal(18, 2)
+  entry     JournalEntry  @relation(fields: [entryId], references: [id])
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([entryId])
+}
+
+// ── Balance adjustments (admin) ─────────────────────────────────────────────
+
+enum AdjustmentDirection {
+  CREDIT
+  DEBIT
+}
+
+enum AdjustmentKind {
+  REFUND
+  GOODWILL
+  CORRECTION
+}
+
+enum AdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Above the approval threshold a different admin must approve before the money moves
+model Adjustment {
+  id            String              @id @default(uuid())
+  userId        String
+  direction     AdjustmentDirection
+  kind          AdjustmentKind
+  amount        Decimal             @db.Decimal(18, 2)
+  // Internal: the user sees only the kind ("Refund from PurpleWallet")
+  reason        String
+  status        AdjustmentStatus    @default(PENDING)
+  requestedById String
+  decidedById   String?
+  decisionNote  String?
+  transactionId String?             @unique
+  createdAt     DateTime            @default(now())
+  decidedAt     DateTime?
+  user          User                @relation("AdjustedUser", fields: [userId], references: [id])
+  requestedBy   User                @relation("AdjustmentRequester", fields: [requestedById], references: [id])
+  decidedBy     User?               @relation("AdjustmentDecider", fields: [decidedById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId])
 }
