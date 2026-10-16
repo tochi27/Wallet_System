@@ -3,6 +3,7 @@ import { ArrowDownLeftIcon, ArrowUpRightIcon, ScaleIcon, WalletIcon } from "luci
 import { useBalance, useWalletStats } from "@/api/wallet"
 import { DeltaChip } from "@/components/wallet/delta-chip"
 import { GrowthHero } from "@/components/wallet/growth-hero"
+import { InsightsCard } from "@/components/insights/insights-card"
 import { RecentTransactions } from "@/components/wallet/recent-transactions"
 import { StatTile } from "@/components/wallet/stat-tile"
 import { WeeklyChart } from "@/components/wallet/weekly-chart"
@@ -72,6 +73,8 @@ export function HomePage() {
         <GrowthHero stats={week} className="xl:col-span-2" />
         <WeeklyChart stats={week} className="xl:col-span-3" />
       </div>
+
+      <InsightsCard />
 
       <RecentTransactions />
     </div>

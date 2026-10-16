@@ -1,4 +1,5 @@
-import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react"
+import { ChevronsUpDownIcon, LogOutIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react"
+import { Link } from "react-router"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,16 +13,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/lib/auth-context"
 import { useTheme, type Theme } from "@/lib/theme-context"
+import { initials } from "@/lib/initials"
+import { isStaff } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("")
-}
 
 type UserMenuProps = {
   // "header": avatar only (phones). "sidebar": avatar, plus name and email when the sidebar is wide.
@@ -64,6 +58,21 @@ export function UserMenu({ variant = "header" }: UserMenuProps) {
           <div className="truncate font-medium text-foreground">{user.name}</div>
           <div className="truncate text-xs text-muted-foreground">{user.email}</div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <SettingsIcon aria-hidden />
+            Settings
+          </Link>
+        </DropdownMenuItem>
+        {isStaff(user.role) && (
+          <DropdownMenuItem asChild>
+            <Link to="/admin">
+              <ShieldCheckIcon aria-hidden />
+              Admin
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">Theme</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>

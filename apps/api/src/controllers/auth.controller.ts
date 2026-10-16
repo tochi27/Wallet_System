@@ -5,6 +5,22 @@ import { errorResponse, successResponse } from "../utils/response.utils";
 import { generateToken } from "../utils/jwt.utils";
 import { addToBlacklistWithExpiry } from "../utils/tokenBlacklist.utils";
 import jwt, { JwtPayload } from "jsonwebtoken";
+import logger from "../config/logger";
+import { recordSignIn } from "../services/security/device.service";
+import {
+  PasswordError,
+  requestPasswordReset,
+  resetPassword as applyPasswordReset,
+} from "../services/security/password.service";
+import {
+  resendVerification as sendNewVerificationLink,
+  sendVerificationEmail,
+  VerificationError,
+  verifyEmail as applyEmailVerification,
+} from "../services/security/verification.service";
+
+export const FORGOT_PASSWORD_MESSAGE =
+  "If an account exists for that email, we've sent a link to reset the password.";
 
 // User Sign-up controller
 export const signup = async (req: Request, res: Response): Promise<any> => {
@@ -14,6 +30,10 @@ export const signup = async (req: Request, res: Response): Promise<any> => {
     if (existing) return errorResponse(res, "Email already exists", 400);
 
     const user = await registerUser(name, email, password);
+    // The account exists either way; if this email fails, the user can resend it from the app
+    await sendVerificationEmail(user).catch((err) =>
+      logger.error({ err, userId: user.id }, "Could not send the verification email")
+    );
     return successResponse(res, "Signup successful", { user }, 200);
   } catch (error) {
     return errorResponse(res, "Signup failed", 500);
@@ -33,6 +53,11 @@ export const login = async (req: Request, res: Response): Promise<any> => {
     const token = generateToken(user.id.toString());
 
     if (!token) return errorResponse(res, "Failed to generate token", 400);
+
+    // Sign-in alerts must never block signing in
+    await recordSignIn(user.id, req.headers["user-agent"]).catch((err) =>
+      logger.warn({ err, userId: user.id }, "Could not record sign-in device")
+    );
     return successResponse(res, "Login successful", { token }, 200);
   } catch (error) {
     return errorResponse(res, "Login failed", 500);
@@ -66,5 +91,52 @@ export const me = async (req: Request, res: Response): Promise<any> => {
     return successResponse(res, "User fetched successfully", { user }, 200);
   } catch (error) {
     return errorResponse(res, "Failed to fetch user", 500);
+  }
+};
+
+// Forgot password controller
+export const forgotPassword = async (req: Request, res: Response): Promise<any> => {
+  // Answer before doing the work, so neither the message nor the response time reveals
+  // whether the email has an account
+  requestPasswordReset(req.body.email).catch((err) =>
+    logger.error({ err }, "Password reset request failed")
+  );
+  return successResponse(res, FORGOT_PASSWORD_MESSAGE, {}, 200);
+};
+
+// Reset password controller
+export const resetPassword = async (req: Request, res: Response): Promise<any> => {
+  try {
+    await applyPasswordReset(req.body.token, req.body.password);
+    return successResponse(res, "Password reset. Log in with your new password.", {}, 200);
+  } catch (error) {
+    if (error instanceof PasswordError) return errorResponse(res, error.message, error.status);
+    logger.error({ err: error }, "Password reset failed");
+    return errorResponse(res, "Password reset failed", 500);
+  }
+};
+
+// Verify email controller: works signed in or not, since holding the link proves the inbox
+export const verifyEmail = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const result = await applyEmailVerification(req.body.token);
+    const message = result === "verified" ? "Email verified. You can now move money." : "Your email is already verified.";
+    return successResponse(res, message, { status: result }, 200);
+  } catch (error) {
+    if (error instanceof VerificationError) return errorResponse(res, error.message, error.status);
+    logger.error({ err: error }, "Email verification failed");
+    return errorResponse(res, "Email verification failed", 500);
+  }
+};
+
+// Resend verification controller
+export const resendVerification = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email } = await sendNewVerificationLink(req.userId);
+    return successResponse(res, `We've sent a new link to ${email}`, {}, 200);
+  } catch (error) {
+    if (error instanceof VerificationError) return errorResponse(res, error.message, error.status);
+    logger.error({ err: error, userId: req.userId }, "Could not resend the verification email");
+    return errorResponse(res, "Could not send the verification email", 500);
   }
 };

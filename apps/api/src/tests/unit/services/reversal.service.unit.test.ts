@@ -1,3 +1,4 @@
+import { post, postReversal } from "../../../services/ledger/ledger.service";
 import { Prisma, TransactionStatus, TransactionType } from "@prisma/client";
 import prisma from "../../../config/db";
 import { withLock, withMultiLock } from "../../../utils/lock.utils";
@@ -5,6 +6,11 @@ import { invalidateBalance } from "../../../utils/cache.utils";
 import { enqueueTransactionEvent } from "../../../queues/transaction.queue";
 import { reverseTransaction } from "../../../services/reversal.service";
 
+jest.mock("../../../services/ledger/ledger.service", () => ({
+  ...jest.requireActual("../../../services/ledger/ledger.service"),
+  post: jest.fn().mockResolvedValue({ id: "entry-1" }),
+  postReversal: jest.fn().mockResolvedValue({ id: "entry-2" }),
+}));
 jest.mock("../../../config/db", () => ({
   __esModule: true,
   default: {
@@ -158,6 +164,7 @@ describe("reversal.service — unit", () => {
       });
       mockTxClient.wallet.update.mockResolvedValue({});
       mockTxClient.transaction.update.mockResolvedValue(result);
+      (postReversal as jest.Mock).mockResolvedValue({ id: "entry-2" });
 
       const res = await reverseTransaction("orig-001", "user-001");
 
@@ -167,6 +174,27 @@ describe("reversal.service — unit", () => {
         expect.objectContaining({ event: "REVERSAL", userId: "user-001" }),
         result.id
       );
+      // Ledger: the original entry is mirrored, so it nets to zero
+      expect(postReversal).toHaveBeenCalledWith(mockTxClient, { transactionId: "orig-001" }, expect.any(String), "rev-001");
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it("undoes a transaction from before the ledger started against opening balances", async () => {
+      const original = makeOriginal({ type: TransactionType.CREDIT });
+      (prisma.transaction.findUnique as jest.Mock).mockResolvedValue(original);
+      (prisma.transaction.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.transaction.create as jest.Mock).mockResolvedValue(makeOriginal({ id: "rev-001", type: TransactionType.DEBIT, status: TransactionStatus.PENDING }));
+      mockTxClient.wallet.findUnique.mockResolvedValue({ userId: "user-001", balance: new Prisma.Decimal(100) });
+      mockTxClient.transaction.update.mockResolvedValue(makeOriginal({ id: "rev-001", type: TransactionType.DEBIT }));
+      (postReversal as jest.Mock).mockResolvedValueOnce(null);
+
+      await reverseTransaction("orig-001", "user-001");
+
+      expect(post).toHaveBeenCalledWith(mockTxClient, expect.objectContaining({
+        type: "REVERSAL",
+        debit: { wallet: "user-001" },
+        credit: "opening_balances",
+      }));
     });
 
     it("throws Insufficient funds to reverse and marks pending FAILED", async () => {

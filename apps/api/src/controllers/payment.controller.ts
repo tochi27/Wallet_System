@@ -23,9 +23,11 @@ import { isPaystackConfigured, PaymentsNotConfiguredError, PaystackError } from 
 import { isValidSignature, recordEvent, type PaystackWebhookPayload } from "../services/payments/paystack-webhook.service";
 import { getRawBody } from "../utils/rawBody.utils";
 import { errorResponse, successResponse } from "../utils/response.utils";
+import { LimitError } from "../services/limits.service";
 
 const handlePaymentError = (res: Response, err: unknown, fallback: string) => {
   if (err instanceof PaymentsNotConfiguredError) return errorResponse(res, err.message, 503);
+  if (err instanceof LimitError) return errorResponse(res, err.message, err.status);
   if (
     err instanceof DepositNotFoundError ||
     err instanceof WithdrawalNotFoundError ||

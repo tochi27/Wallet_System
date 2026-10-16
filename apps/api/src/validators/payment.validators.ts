@@ -24,6 +24,7 @@ export const bankAccountSchema = z.object({
 
 export const withdrawalSchema = z.object({
   bankAccountId: z.uuid("Choose a bank account"),
+  pin: z.string().optional(),
   amount: z
     .number({ error: "Amount must be a number" })
     .min(MIN_WITHDRAWAL, `The minimum withdrawal is ₦${MIN_WITHDRAWAL}`)

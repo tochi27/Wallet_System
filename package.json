@@ -2,13 +2,14 @@
   "name": "wallet-system",
   "version": "1.0.0",
   "private": true,
-  "description": "Wallet system monorepo: Express/Prisma/Redis API and web frontend",
+  "description": "PurpleWallet monorepo: Express/Prisma/Redis API and web frontend",
   "author": "Tochukwu Amaechina",
   "license": "ISC",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
+    "predev:api": "docker compose up -d --wait postgres redis",
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
     "build:api": "npm run build -w apps/api",
@@ -17,11 +18,15 @@
     "test:api": "npm run test -w apps/api",
     "test:api:coverage": "npm run test:coverage -w apps/api",
     "lint:web": "npm run lint -w apps/web",
+    "pretest:e2e": "docker compose up -d --wait postgres redis",
+    "test:e2e": "npm run test:e2e -w apps/web --",
     "db:generate": "npm run db:generate -w apps/api",
     "db:migrate": "npm exec -w apps/api -- prisma migrate dev",
     "db:deploy": "npm exec -w apps/api -- prisma migrate deploy",
     "db:push": "npm run db:push -w apps/api",
     "db:studio": "npm run db:studio -w apps/api",
+    "admin:grant": "npm run admin:grant -w apps/api --",
+    "admin:revoke": "npm run admin:revoke -w apps/api --",
     "docker:dev": "docker compose up --build"
   }
 }

@@ -4,10 +4,15 @@ import { bullmqConnection } from "../config/redis.config";
 import type { PaymentsJobData } from "../queues/payments.queue";
 import { reconcilePayments } from "../services/payments/reconcile.service";
 import { confirmWithdrawal } from "../services/payments/withdrawal.service";
+import { purgeRejectedDocuments } from "../services/kyc/upgrade.service";
 
 export const processPaymentsJob = async (job: Job<PaymentsJobData>): Promise<void> => {
   if (job.data.kind === "reconcile") {
     await reconcilePayments();
+    return;
+  }
+  if (job.data.kind === "purge-kyc") {
+    await purgeRejectedDocuments();
     return;
   }
   const withdrawal = await confirmWithdrawal(job.data.reference);

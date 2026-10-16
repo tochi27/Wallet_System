@@ -1,3 +1,4 @@
+import { post } from "../../../services/ledger/ledger.service";
 import { Prisma, TransactionStatus, TransactionType } from "@prisma/client";
 import prisma from "../../../config/db";
 import { withLock } from "../../../utils/lock.utils";
@@ -12,6 +13,11 @@ import {
   getTransactions,
 } from "../../../services/wallet.service";
 
+jest.mock("../../../services/ledger/ledger.service", () => ({
+  ...jest.requireActual("../../../services/ledger/ledger.service"),
+  post: jest.fn().mockResolvedValue({ id: "entry-1" }),
+  postReversal: jest.fn().mockResolvedValue({ id: "entry-2" }),
+}));
 jest.mock("../../../config/db", () => ({
   __esModule: true,
   default: {
@@ -22,6 +28,8 @@ jest.mock("../../../config/db", () => ({
       aggregate: jest.fn(),
     },
     wallet: { findUnique: jest.fn() },
+    // No opening-balance entry by default: the whole history counts
+    ledgerLine: { findFirst: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn(),
   },
 }));
@@ -109,6 +117,12 @@ describe("wallet.service — unit", () => {
         expect.objectContaining({ event: "CREDIT", userId: "user-001" }),
         result.id
       );
+      // Development money comes from its own account, never mixed with real payments
+      expect(post).toHaveBeenCalledWith(mockTxClient, expect.objectContaining({
+        type: "DIRECT_FUNDING",
+        debit: "dev_funding",
+        credit: { wallet: "user-001" },
+      }));
     });
 
     it("marks transaction FAILED and rethrows when wallet not found", async () => {
@@ -305,6 +319,22 @@ describe("wallet.service — unit", () => {
       expect(prisma.transaction.aggregate).toHaveBeenCalledWith(
         expect.objectContaining({ where: { userId: "user-001", type: TransactionType.DEBIT, status: statusFilter } })
       );
+    });
+
+    it("starts from the ledger's opening balance and counts only later transactions", async () => {
+      const ledgerStart = new Date("2026-10-14T13:55:50Z");
+      (prisma.ledgerLine.findFirst as jest.Mock).mockResolvedValueOnce({
+        amount: new Prisma.Decimal(-900000), // a credit to the wallet: what we owed the user
+        entry: { createdAt: ledgerStart },
+      });
+      (prisma.transaction.aggregate as jest.Mock)
+        .mockResolvedValueOnce({ _sum: { amount: null } })
+        .mockResolvedValueOnce({ _sum: { amount: new Prisma.Decimal(450000) } });
+
+      const balance = await computeBalance("user-001");
+
+      expect(balance.toString()).toBe("450000");
+      expect((prisma.transaction.aggregate as jest.Mock).mock.calls[0][0].where.timestamp).toEqual({ gt: ledgerStart });
     });
   });
 

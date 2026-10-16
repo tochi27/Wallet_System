@@ -11,11 +11,17 @@ import { createTransactionWorker } from "./workers/transaction.worker";
 import { createWebhookWorker } from "./workers/webhook.worker";
 import { createPaystackWorker } from "./workers/paystack.worker";
 import { createPaymentsWorker } from "./workers/payments.worker";
-import { startPaymentsReconciliation } from "./queues/payments.queue";
+import { createNotificationWorker } from "./workers/notification.worker";
+import { createInsightsWorker } from "./workers/insights.worker";
+import { startKycPurge, startPaymentsReconciliation } from "./queues/payments.queue";
 import authRoutes from "./routes/auth.routes";
 import walletRoutes from "./routes/wallet.routes";
 import webhookRoutes from "./routes/webhook.routes";
 import paymentRoutes from "./routes/payment.routes";
+import accountRoutes from "./routes/account.routes";
+import adminRoutes from "./routes/admin.routes";
+import insightsRoutes from "./routes/insights.routes";
+import assistantRoutes from "./routes/assistant.routes";
 import { healthCheck } from "./controllers/health.controller";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
@@ -26,7 +32,9 @@ const app = express();
 
 // ✅ Middleware
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGINS }));
+// Content-Disposition is exposed so the web app can save downloads (statements) under the
+// filename the API suggests; browsers hide it from cross-origin code otherwise
+app.use(cors({ origin: env.CORS_ORIGINS, exposedHeaders: ["Content-Disposition"] }));
 app.use(express.json({ verify: captureRawBody }));
 app.use(express.urlencoded({ extended: true }));
 app.use(
@@ -45,7 +53,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // ✅ Root + health
 app.get("/", (_req: Request, res: Response) =>
-  res.status(200).json({ message: "💰 Wallet API running 🚀" })
+  res.status(200).json({ message: "💰 PurpleWallet API running 🚀" })
 );
 app.get("/health", healthCheck);
 
@@ -54,6 +62,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/account", accountRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/insights", insightsRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 // ✅ Error Handler
 app.use(
@@ -71,6 +83,8 @@ let worker: Worker | null = null;
 let webhookWorker: Worker | null = null;
 let paystackWorker: Worker | null = null;
 let paymentsWorker: Worker | null = null;
+let notificationWorker: Worker | null = null;
+let insightsWorker: Worker | null = null;
 
 // ✅ Service connections (Prisma + Redis + Workers)
 export const connectServices = async () => {
@@ -85,8 +99,11 @@ export const connectServices = async () => {
       webhookWorker = createWebhookWorker();
       paystackWorker = createPaystackWorker();
       paymentsWorker = createPaymentsWorker();
+      notificationWorker = createNotificationWorker();
+      insightsWorker = createInsightsWorker();
       await startPaymentsReconciliation();
-      logger.info("Transaction, webhook and payments workers started");
+      await startKycPurge();
+      logger.info("Transaction, webhook, payments, notification and insights workers started");
     }
 
     logger.info("Database and Redis connected");
@@ -108,6 +125,8 @@ export const disconnectServices = async () => {
     webhookWorker?.close(),
     paystackWorker?.close(),
     paymentsWorker?.close(),
+    notificationWorker?.close(),
+    insightsWorker?.close(),
   ]);
   logger.info("All services disconnected cleanly");
 };

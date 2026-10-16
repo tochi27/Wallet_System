@@ -13,6 +13,7 @@ import {
 import { BalanceCard } from "@/components/wallet/balance-card"
 import { DeltaChip } from "@/components/wallet/delta-chip"
 import { StatTile } from "@/components/wallet/stat-tile"
+import { StatementDialog } from "@/components/wallet/statement-dialog"
 import { TransactionHistory } from "@/components/wallet/transaction-history"
 import { percentChange } from "@/lib/stats"
 import { cn } from "@/lib/utils"
@@ -44,30 +45,33 @@ export function WalletPage() {
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Wallet</h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="rounded-full bg-card shadow-soft">
-              <CalendarIcon aria-hidden />
-              {stats
-                ? `${rangeFormatter.format(asDate(stats.current.from))} – ${rangeFormatter.format(asDate(stats.current.to))}`
-                : `Last ${days} days`}
-              <ChevronDownIcon aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Period</DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={String(days)}
-              onValueChange={(value) => setParams({ period: value }, { replace: true })}
-            >
-              {PERIODS.map((period) => (
-                <DropdownMenuRadioItem key={period} value={String(period)}>
-                  Last {period} days
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <StatementDialog />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-full bg-card shadow-soft">
+                <CalendarIcon aria-hidden />
+                {stats
+                  ? `${rangeFormatter.format(asDate(stats.current.from))} – ${rangeFormatter.format(asDate(stats.current.to))}`
+                  : `Last ${days} days`}
+                <ChevronDownIcon aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Period</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={String(days)}
+                onValueChange={(value) => setParams({ period: value }, { replace: true })}
+              >
+                {PERIODS.map((period) => (
+                  <DropdownMenuRadioItem key={period} value={String(period)}>
+                    Last {period} days
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* While a new period loads, keep the old numbers on screen, dimmed */}

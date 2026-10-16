@@ -14,6 +14,7 @@ jest.mock("../../config/env", () => {
 jest.mock("../../middleware/auth.middleware", () => ({
   authenticate: (req: any, _res: any, next: any) => {
     req.userId = "user123";
+    req.emailVerified = true;
     next();
   },
 }));
@@ -22,6 +23,10 @@ jest.mock("../../services/wallet.service.ts");
 jest.mock("../../services/transfer.service.ts");
 jest.mock("../../services/reversal.service.ts");
 jest.mock("../../utils/validateAmount.utils.ts");
+jest.mock("../../services/security/pin.service", () => ({
+  ...jest.requireActual("../../services/security/pin.service"),
+  verifyPin: jest.fn(),
+}));
 
 const setEnabled = (enabled: boolean) => {
   (env as { DIRECT_FUNDING_ENABLED: boolean }).DIRECT_FUNDING_ENABLED = enabled;
@@ -55,7 +60,7 @@ describe("Direct funding guard (DIRECT_FUNDING_ENABLED)", () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
         .set("Authorization", "Bearer token")
-        .send({ amount: 50, receiverEmail: "friend@example.com" });
+        .send({ amount: 50, receiverEmail: "friend@example.com", pin: "1357" });
 
       expect(res.status).toBe(200);
       expect(transferFunds).toHaveBeenCalled();

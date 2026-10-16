@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import {
   BankAccount,
+  JournalEntryType,
   Prisma,
   TransactionStatus,
   TransactionType,
@@ -14,6 +15,9 @@ import { enqueueTransactionEvent } from "../../queues/transaction.queue";
 import { invalidateBalance } from "../../utils/cache.utils";
 import { getIdempotencyRecord, saveIdempotencyRecord } from "../../utils/idempotency.utils";
 import { withLock } from "../../utils/lock.utils";
+import { post, SYSTEM_ACCOUNTS } from "../ledger/ledger.service";
+import { assertCanSend } from "../limits.service";
+import { formatNaira, notify } from "../notifications/notification.service";
 import { getActiveBankAccount } from "./bank-account.service";
 import { initiateTransfer, PaystackError, toSubunit, verifyTransfer, type TransferStatus } from "./paystack.client";
 
@@ -97,6 +101,8 @@ const refundWithdrawal = async (
 
   const refund = await withLock(withdrawal.userId, () =>
     prisma.$transaction(async (tx) => {
+      // A payout Paystack reverses after paying it comes back via Paystack, not from "in transit"
+      const { status: before } = await tx.withdrawal.findUniqueOrThrow({ where: { id: withdrawalId }, select: { status: true } });
       const claimed = await tx.withdrawal.updateMany({
         where: { id: withdrawalId, status: { in: claimable } },
         data: { status: outcome, failureReason: reason, completedAt: new Date() },
@@ -126,6 +132,15 @@ const refundWithdrawal = async (
         },
       });
       await tx.withdrawal.update({ where: { id: withdrawalId }, data: { refundTransactionId: credit.id } });
+      await post(tx, {
+        type: JournalEntryType.WITHDRAWAL_REFUND,
+        description: credit.description ?? "Withdrawal refund",
+        amount: withdrawal.amount,
+        debit: before === WithdrawalStatus.SUCCESSFUL ? SYSTEM_ACCOUNTS.PAYSTACK_CLEARING : SYSTEM_ACCOUNTS.PAYOUTS_IN_TRANSIT,
+        credit: { wallet: withdrawal.userId },
+        reference: withdrawal.reference,
+        transactionId: credit.id,
+      });
       return credit;
     })
   );
@@ -146,13 +161,58 @@ const refundWithdrawal = async (
     refund.id
   );
   logger.info({ reference: withdrawal.reference, outcome, reason }, "Withdrawal refunded");
+  await notifyWithdrawal(withdrawalId, "failed");
 };
 
-const markSuccessful = (withdrawalId: string) =>
-  prisma.withdrawal.updateMany({
-    where: { id: withdrawalId, status: WithdrawalStatus.PROCESSING },
-    data: { status: WithdrawalStatus.SUCCESSFUL, completedAt: new Date() },
+const WITHDRAWAL_NOTICES = {
+  started: { type: "withdrawal.started", title: "Withdrawal on its way" },
+  paid: { type: "withdrawal.paid", title: "Withdrawal paid" },
+  failed: { type: "withdrawal.failed", title: "Withdrawal refunded" },
+} as const;
+
+const notifyWithdrawal = async (withdrawalId: string, kind: keyof typeof WITHDRAWAL_NOTICES) => {
+  const withdrawal = await prisma.withdrawal.findUnique({ where: { id: withdrawalId }, include: { bankAccount: true } });
+  if (!withdrawal) return;
+  const amount = formatNaira(withdrawal.amount);
+  const destination = `${withdrawal.bankAccount.bankName} ••${withdrawal.bankAccount.accountNumberLast4}`;
+  const body = {
+    started: `${amount} is on its way to ${destination}.`,
+    paid: `${amount} has been paid into ${destination}.`,
+    failed: `Your withdrawal of ${amount} to ${destination} didn't go through${withdrawal.failureReason ? ` (${withdrawal.failureReason})` : ""}. The money is back in your wallet.`,
+  }[kind];
+  await notify({
+    userId: withdrawal.userId,
+    ...WITHDRAWAL_NOTICES[kind],
+    body,
+    data: { reference: withdrawal.reference },
+    actionPath: "/wallet",
   });
+};
+
+// Notifies only when this call is the one that moved it to SUCCESSFUL, so a webhook and a
+// follow-up check arriving together produce a single "paid" notification
+const markSuccessful = async (withdrawalId: string) => {
+  const paid = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.withdrawal.updateMany({
+      where: { id: withdrawalId, status: WithdrawalStatus.PROCESSING },
+      data: { status: WithdrawalStatus.SUCCESSFUL, completedAt: new Date() },
+    });
+    if (count === 0) return false;
+    // The bank has the money: it leaves "in transit" and our Paystack balance
+    const withdrawal = await tx.withdrawal.findUniqueOrThrow({ where: { id: withdrawalId } });
+    await post(tx, {
+      type: JournalEntryType.WITHDRAWAL_PAID,
+      description: "Withdrawal paid to the bank",
+      amount: withdrawal.amount,
+      debit: SYSTEM_ACCOUNTS.PAYOUTS_IN_TRANSIT,
+      credit: SYSTEM_ACCOUNTS.PAYSTACK_CLEARING,
+      reference: withdrawal.reference,
+      transactionId: withdrawal.debitTransactionId,
+    });
+    return true;
+  });
+  if (paid) await notifyWithdrawal(withdrawalId, "paid");
+};
 
 /** Moves a withdrawal on according to what Paystack says happened to its transfer. */
 const applyTransferStatus = async (withdrawalId: string, status: TransferStatus, reason: string | null) => {
@@ -230,6 +290,8 @@ export const createWithdrawal = async (
       const wallet = await tx.wallet.findUnique({ where: { userId } });
       if (!wallet) throw new Error("Wallet not found");
       if (new Prisma.Decimal(wallet.balance).lt(amount)) throw new InsufficientFundsError();
+      // Inside the lock and transaction, so two withdrawals at once can't both fit under the limit
+      await assertCanSend(tx, userId, amount);
 
       const balanceBefore = wallet.balance;
       const balanceAfter = new Prisma.Decimal(balanceBefore).sub(amount);
@@ -248,6 +310,16 @@ export const createWithdrawal = async (
       });
       const withdrawal = await tx.withdrawal.create({
         data: { userId, bankAccountId, reference, amount, debitTransactionId: debit.id },
+      });
+      // No longer the user's: it's on its way to their bank
+      await post(tx, {
+        type: JournalEntryType.WITHDRAWAL,
+        description: debit.description ?? "Withdrawal",
+        amount,
+        debit: { wallet: userId },
+        credit: SYSTEM_ACCOUNTS.PAYOUTS_IN_TRANSIT,
+        reference,
+        transactionId: debit.id,
       });
       return { withdrawal, debit };
     })
@@ -269,6 +341,8 @@ export const createWithdrawal = async (
   await sendTransfer(withdrawal, account);
 
   const view = toWithdrawalView(await withAccount(withdrawal.id));
+  // An instant success or refund has already notified; otherwise say it's on its way
+  if (view.status === WithdrawalStatus.PROCESSING) await notifyWithdrawal(withdrawal.id, "started");
   if (idempotencyKey) await saveIdempotencyRecord(idempotencyNamespace(idempotencyKey), userId, view);
   return view;
 };

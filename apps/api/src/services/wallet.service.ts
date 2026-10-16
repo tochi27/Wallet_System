@@ -1,6 +1,7 @@
-import { TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
+import { JournalEntryType, TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
 import prisma from "../config/db";
 import { withLock } from "../utils/lock.utils";
+import { post, SYSTEM_ACCOUNTS } from "./ledger/ledger.service";
 import { invalidateBalance } from "../utils/cache.utils";
 import { enqueueTransactionEvent } from "../queues/transaction.queue";
 import { getIdempotencyRecord, saveIdempotencyRecord } from "../utils/idempotency.utils";
@@ -40,7 +41,7 @@ export const creditWallet = async (
           data: { balance: balanceAfter },
         });
 
-        return tx.transaction.update({
+        const credited = await tx.transaction.update({
           where: { id: pending.id },
           data: {
             status: TransactionStatus.SUCCESSFUL,
@@ -48,6 +49,16 @@ export const creditWallet = async (
             balanceAfter,
           },
         });
+        // Development-only money: it comes from the dev funding account, never from a real payment
+        await post(tx, {
+          type: JournalEntryType.DIRECT_FUNDING,
+          description: "Direct credit (development)",
+          amount,
+          debit: SYSTEM_ACCOUNTS.DEV_FUNDING,
+          credit: { wallet: userId },
+          transactionId: credited.id,
+        });
+        return credited;
       });
 
       await invalidateBalance(userId);
@@ -112,7 +123,7 @@ export const debitWallet = async (
           data: { balance: balanceAfter },
         });
 
-        return tx.transaction.update({
+        const debited = await tx.transaction.update({
           where: { id: pending.id },
           data: {
             status: TransactionStatus.SUCCESSFUL,
@@ -120,6 +131,15 @@ export const debitWallet = async (
             balanceAfter,
           },
         });
+        await post(tx, {
+          type: JournalEntryType.DIRECT_FUNDING,
+          description: "Direct debit (development)",
+          amount,
+          debit: { wallet: userId },
+          credit: SYSTEM_ACCOUNTS.DEV_FUNDING,
+          transactionId: debited.id,
+        });
+        return debited;
       });
 
       await invalidateBalance(userId);
@@ -152,21 +172,35 @@ export const getBalance = async (userId: string) => {
 // statuses must be counted for a reversed transaction to net to zero against the stored balance.
 const BALANCE_STATUSES = [TransactionStatus.SUCCESSFUL, TransactionStatus.REVERSED];
 
+/**
+ * The balance the transaction history adds up to. A wallet that already held money when the
+ * ledger started begins from its opening balance and counts only transactions since then, so gaps
+ * in older history (which the opening balance already covers) don't show up as mismatches. Any
+ * other wallet counts its whole history.
+ */
 export const computeBalance = async (userId: string): Promise<Prisma.Decimal> => {
+  const opening = await prisma.ledgerLine.findFirst({
+    where: { account: { userId }, entry: { type: JournalEntryType.OPENING_BALANCE } },
+    select: { amount: true, entry: { select: { createdAt: true } } },
+  });
+  const since = opening ? { timestamp: { gt: opening.entry.createdAt } } : {};
+
   const [credits, debits] = await Promise.all([
     prisma.transaction.aggregate({
-      where: { userId, type: TransactionType.CREDIT, status: { in: BALANCE_STATUSES } },
+      where: { userId, type: TransactionType.CREDIT, status: { in: BALANCE_STATUSES }, ...since },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { userId, type: TransactionType.DEBIT, status: { in: BALANCE_STATUSES } },
+      where: { userId, type: TransactionType.DEBIT, status: { in: BALANCE_STATUSES }, ...since },
       _sum: { amount: true },
     }),
   ]);
 
+  // A wallet's line is a credit (negative): the opening balance is what we owed the user
+  const openingBalance = opening ? new Prisma.Decimal(opening.amount).neg() : new Prisma.Decimal(0);
   const totalCredits = credits._sum.amount ?? new Prisma.Decimal(0);
   const totalDebits = debits._sum.amount ?? new Prisma.Decimal(0);
-  return new Prisma.Decimal(totalCredits).sub(totalDebits);
+  return openingBalance.add(totalCredits).sub(totalDebits);
 };
 
 export const getTransactions = async (

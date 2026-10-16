@@ -418,8 +418,12 @@
  *         application/json:
  *           schema:
  *             type: object
- *             required: [bankAccountId, amount]
+ *             required: [bankAccountId, amount, pin]
  *             properties:
+ *               pin:
+ *                 type: string
+ *                 pattern: '^\d{4}$'
+ *                 description: The transaction PIN. 400 if wrong, 403 if none is set, 423 if locked.
  *               bankAccountId:
  *                 type: string
  *                 format: uuid

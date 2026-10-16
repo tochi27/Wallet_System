@@ -188,3 +188,8 @@ export const verifyTransfer = async (reference: string): Promise<VerifiedTransfe
     throw error;
   }
 };
+
+export type PaystackBalance = { currency: string; balance: number };
+
+/** The integration's balance held at Paystack, per currency, in subunits. */
+export const fetchBalance = () => request<PaystackBalance[]>("/balance");

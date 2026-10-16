@@ -13,6 +13,10 @@ jest.mock("../../utils/tokenBlacklist.utils.ts");
 jest.mock("../../utils/jwt.utils.ts");
 jest.mock("bcryptjs");
 jest.mock("jsonwebtoken");
+jest.mock("../../services/security/verification.service", () => ({
+  ...jest.requireActual("../../services/security/verification.service"),
+  sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("../../middleware/auth.middleware", () => ({
   authenticate: (req: any, res: any, next: any) => {
     if (!req.headers.authorization) {

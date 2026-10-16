@@ -56,6 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient]
   )
 
+  const replaceToken = useCallback((newToken: string) => {
+    storeToken(newToken)
+    setToken(newToken)
+  }, [])
+
   const signOut = useCallback(async () => {
     try {
       await logoutRequest()
@@ -81,9 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       retry: () => void refetch(),
       signIn,
+      replaceToken,
       signOut,
     }),
-    [status, user, error, refetch, signIn, signOut]
+    [status, user, error, refetch, signIn, replaceToken, signOut]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -139,10 +139,10 @@ export function useResolvedAccount(bankCode: string | null, accountNumber: strin
 
 // ── Withdrawals ─────────────────────────────────────────────────────────────
 
-export function startWithdrawal(bankAccountId: string, amount: number, idempotencyKey: string) {
+export function startWithdrawal(bankAccountId: string, amount: number, pin: string, idempotencyKey: string) {
   return api<Withdrawal>("/api/payments/withdrawals", {
     method: "POST",
-    body: { bankAccountId, amount },
+    body: { bankAccountId, amount, pin },
     headers: { "Idempotency-Key": idempotencyKey },
   })
 }

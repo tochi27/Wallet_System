@@ -39,7 +39,9 @@ export function SignupPage() {
         return
       }
       signIn(token)
-      toast.success(`Welcome, ${user.name}! Your wallet is ready.`)
+      toast.success(`Welcome, ${user.name}! Your wallet is ready.`, {
+        description: `We've emailed a link to ${user.email}. Verify your email to start moving money.`,
+      })
       navigate("/", { replace: true })
     },
   })

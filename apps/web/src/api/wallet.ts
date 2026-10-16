@@ -1,5 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import type { SpendingCategory } from "@/lib/categories"
 
 export type TransactionType = "CREDIT" | "DEBIT"
 export type TransactionStatus = "PENDING" | "PROCESSING" | "SUCCESSFUL" | "FAILED" | "REVERSED"
@@ -18,6 +19,9 @@ export type Transaction = {
   transferId: string | null
   reversalOf: string | null
   timestamp: string
+  // Money out only; AI-suggested unless the user picked one
+  category: SpendingCategory | null
+  categorySource: "AI" | "USER" | null
 }
 
 export type Balance = {
@@ -62,10 +66,10 @@ export type WalletStats = {
 }
 
 export type MoneyInput = { amount: number; description?: string }
-export type TransferInput = MoneyInput & { receiverEmail: string }
+export type TransferInput = MoneyInput & { receiverEmail: string; pin: string }
 
 // Stats are bucketed by calendar day in the viewer's own timezone
-const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+export const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 
 export const walletKeys = {
   all: ["wallet"] as const,
@@ -129,4 +133,35 @@ export function useTransactionHistory(pageSize = 20) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   })
+}
+
+// ── Receipts and statements ─────────────────────────────────────────────────
+
+export type TransactionDetail = {
+  transaction: Transaction
+  label: string
+  counterparty: { name: string } | null
+  deposit: { reference: string; channel: string | null; paidAt: string | null } | null
+  withdrawal: {
+    reference: string
+    status: string
+    failureReason: string | null
+    completedAt: string | null
+    bankAccount: { bankName: string; accountNumberLast4: string; accountName: string }
+  } | null
+  reversedBy: { id: string; timestamp: string } | null
+  reversalOf: { id: string; description: string | null; amount: string; timestamp: string } | null
+}
+
+export function useTransactionDetail(transactionId: string | undefined) {
+  return useQuery({
+    queryKey: ["wallet", "transaction", transactionId],
+    queryFn: () => api<TransactionDetail>(`/api/wallet/transactions/${encodeURIComponent(transactionId!)}`),
+    enabled: Boolean(transactionId),
+  })
+}
+
+export function statementPath(from: string, to: string, format: "pdf" | "csv") {
+  const params = new URLSearchParams({ from, to, format, timezone: TIMEZONE })
+  return `/api/wallet/statement?${params}`
 }

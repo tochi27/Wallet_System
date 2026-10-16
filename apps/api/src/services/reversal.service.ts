@@ -1,8 +1,9 @@
-import { TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
+import { JournalEntryType, TransactionType, TransactionStatus, Prisma, Transaction } from "@prisma/client";
 import prisma from "../config/db";
 import { withLock, withMultiLock } from "../utils/lock.utils";
 import { invalidateBalance } from "../utils/cache.utils";
 import { enqueueTransactionEvent } from "../queues/transaction.queue";
+import { post, postReversal, SYSTEM_ACCOUNTS } from "./ledger/ledger.service";
 
 export const reverseTransaction = async (transactionId: string, userId: string) => {
   const original = await prisma.transaction.findUnique({ where: { id: transactionId } });
@@ -78,10 +79,24 @@ const reverseSingle = async (original: Transaction) => {
         await tx.wallet.update({ where: { userId: original.userId }, data: { balance: balanceAfter } });
         await tx.transaction.update({ where: { id: original.id }, data: { status: TransactionStatus.REVERSED } });
 
-        return tx.transaction.update({
+        const reversal = await tx.transaction.update({
           where: { id: pending.id },
           data: { status: TransactionStatus.SUCCESSFUL, balanceBefore, balanceAfter },
         });
+        // Mirror the original entry; one from before the ledger started is undone against opening balances
+        const mirrored = await postReversal(tx, { transactionId: original.id }, `Reversal of ${original.reference}`, reversal.id);
+        if (!mirrored) {
+          const toUser = reversalType === TransactionType.CREDIT;
+          await post(tx, {
+            type: JournalEntryType.REVERSAL,
+            description: `Reversal of ${original.reference}`,
+            amount: original.amount,
+            debit: toUser ? SYSTEM_ACCOUNTS.OPENING_BALANCES : { wallet: original.userId },
+            credit: toUser ? { wallet: original.userId } : SYSTEM_ACCOUNTS.OPENING_BALANCES,
+            transactionId: reversal.id,
+          });
+        }
+        return reversal;
       });
 
       await invalidateBalance(original.userId);
@@ -178,6 +193,20 @@ const reverseTransfer = async (senderOriginal: Transaction, senderId: string) =>
             data: { status: TransactionStatus.SUCCESSFUL, balanceBefore: receiverBefore, balanceAfter: receiverAfter },
           }),
         ]);
+
+        // The receiver pays it back to the sender
+        const mirrored = await postReversal(tx, { reference: senderOriginal.transferId! }, "Transfer reversed", senderTx.id);
+        if (!mirrored) {
+          await post(tx, {
+            type: JournalEntryType.REVERSAL,
+            description: "Transfer reversed",
+            amount: senderOriginal.amount,
+            debit: { wallet: receiverOriginal.userId },
+            credit: { wallet: senderId },
+            reference: senderOriginal.transferId,
+            transactionId: senderTx.id,
+          });
+        }
 
         return { sender: senderTx, receiver: receiverTx };
       });

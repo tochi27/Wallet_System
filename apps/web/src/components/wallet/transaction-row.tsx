@@ -1,7 +1,9 @@
 import { ArrowDownLeftIcon, ArrowUpRightIcon, Undo2Icon } from "lucide-react"
+import { Link } from "react-router"
 import type { Transaction } from "@/api/wallet"
 import { StatusBadge } from "@/components/wallet/status-badge"
 import { formatSignedMoney } from "@/lib/money"
+import { CATEGORY_META } from "@/lib/categories"
 import { transactionLabel } from "@/lib/transactions"
 import { cn } from "@/lib/utils"
 
@@ -19,58 +21,69 @@ type TransactionRowProps = {
 
 export function TransactionRow({ tx, timeOnly = false }: TransactionRowProps) {
   const isCredit = tx.type === "CREDIT"
-  const label = transactionLabel(tx)
+  // e.g. "Transfer sent · Food & drink" once the spend has a category
+  const label = tx.category ? `${transactionLabel(tx)} · ${CATEGORY_META[tx.category].label}` : transactionLabel(tx)
   const Icon = tx.reversalOf ? Undo2Icon : isCredit ? ArrowDownLeftIcon : ArrowUpRightIcon
   const settled = tx.status === "SUCCESSFUL"
   const when = (timeOnly ? timeFormatter : dateTimeFormatter).format(new Date(tx.timestamp))
 
   return (
-    <li className={cn("flex items-center gap-3 py-3", TABLE_COLUMNS, "lg:items-center")}>
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-full",
-            isCredit ? "bg-secondary text-primary" : "bg-muted text-foreground"
-          )}
-          aria-hidden
-        >
-          <Icon className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{tx.description || label}</p>
-          {/* Phones: "Type · time" under the title. Desktop: the time has its own column. */}
-          <p className="truncate text-xs text-muted-foreground lg:hidden">
-            {tx.description ? `${label} · ` : ""}
-            <time dateTime={tx.timestamp}>{when}</time>
-          </p>
-          {tx.description && <p className="hidden truncate text-xs text-muted-foreground lg:block">{label}</p>}
-        </div>
-      </div>
-
-      <time dateTime={tx.timestamp} className="hidden text-sm text-muted-foreground lg:block">
-        {when}
-      </time>
-      <span className="hidden lg:block">
-        <StatusBadge status={tx.status} />
-      </span>
-
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <span
-          className={cn(
-            "text-sm font-semibold tabular-nums",
-            isCredit && settled && "text-primary",
-            !settled && "font-medium text-muted-foreground line-through"
-          )}
-        >
-          <span className="sr-only">{isCredit ? "In: " : "Out: "}</span>
-          {formatSignedMoney(isCredit ? tx.amount : -Number(tx.amount))}
-        </span>
-        {!settled && (
-          <span className="lg:hidden">
-            <StatusBadge status={tx.status} />
-          </span>
+    <li>
+      {/* The whole row opens the receipt */}
+      <Link
+        to={`/transactions/${tx.id}`}
+        className={cn(
+          "-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
+          TABLE_COLUMNS,
+          "lg:items-center"
         )}
-      </div>
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-full",
+              isCredit ? "bg-secondary text-primary" : "bg-muted text-foreground"
+            )}
+            aria-hidden
+          >
+            <Icon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{tx.description || label}</p>
+            {/* Phones: "Type · time" under the title. Desktop: the time has its own column. */}
+            <p className="truncate text-xs text-muted-foreground lg:hidden">
+              {tx.description ? `${label} · ` : ""}
+              <time dateTime={tx.timestamp}>{when}</time>
+            </p>
+            {tx.description && <p className="hidden truncate text-xs text-muted-foreground lg:block">{label}</p>}
+          </div>
+        </div>
+
+        <time dateTime={tx.timestamp} className="hidden text-sm text-muted-foreground lg:block">
+          {when}
+        </time>
+        <span className="hidden lg:block">
+          <StatusBadge status={tx.status} />
+        </span>
+
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span
+            className={cn(
+              "text-sm font-semibold tabular-nums",
+              isCredit && settled && "text-primary",
+              !settled && "font-medium text-muted-foreground line-through"
+            )}
+          >
+            <span className="sr-only">{isCredit ? "In: " : "Out: "}</span>
+            {formatSignedMoney(isCredit ? tx.amount : -Number(tx.amount))}
+          </span>
+          {!settled && (
+            <span className="lg:hidden">
+              <StatusBadge status={tx.status} />
+            </span>
+          )}
+        </div>
+      </Link>
     </li>
   )
 }

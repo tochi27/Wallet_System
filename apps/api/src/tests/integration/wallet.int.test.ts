@@ -20,6 +20,7 @@ jest.mock("../../middleware/auth.middleware", () => ({
       return res.status(401).json({ message: "Authorization header missing" });
     }
     req.userId = "user123";
+    req.emailVerified = true;
     next();
   },
 }));
@@ -29,6 +30,11 @@ jest.mock("../../services/transfer.service.ts");
 jest.mock("../../services/reversal.service.ts");
 jest.mock("../../services/stats.service.ts");
 jest.mock("../../utils/validateAmount.utils.ts");
+jest.mock("../../services/security/pin.service", () => ({
+  ...jest.requireActual("../../services/security/pin.service"),
+  verifyPin: jest.fn(),
+}));
+
 
 const mockTx = (overrides = {}) => ({
   id: "tx-id",
@@ -245,7 +251,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
         .post("/api/wallet/transfer")
         .set("Authorization", `Bearer ${token}`)
         .set("Idempotency-Key", "unique-key-001")
-        .send({ receiverEmail: "receiver@example.com", amount: 100 });
+        .send({ receiverEmail: "receiver@example.com", amount: 100, pin: "1357" });
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe("Transfer successful");
@@ -260,7 +266,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
         .set("Authorization", `Bearer ${token}`)
-        .send({ amount: 100 });
+        .send({ amount: 100, pin: "1357" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("receiverEmail is required");
@@ -273,7 +279,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
         .set("Authorization", `Bearer ${token}`)
-        .send({ receiverEmail: "receiver@example.com", amount: 9999 });
+        .send({ receiverEmail: "receiver@example.com", amount: 9999, pin: "1357" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Insufficient funds");
@@ -286,7 +292,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
         .set("Authorization", `Bearer ${token}`)
-        .send({ receiverEmail: "ghost@example.com", amount: 100 });
+        .send({ receiverEmail: "ghost@example.com", amount: 100, pin: "1357" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Receiver not found");
@@ -299,7 +305,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
         .set("Authorization", `Bearer ${token}`)
-        .send({ receiverEmail: "self@example.com", amount: 100 });
+        .send({ receiverEmail: "self@example.com", amount: 100, pin: "1357" });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe("Cannot transfer to yourself");
@@ -308,7 +314,7 @@ describe("Wallet Controllers (Integration with Express + Supertest)", () => {
     it("should return 401 if token missing", async () => {
       const res = await request(app)
         .post("/api/wallet/transfer")
-        .send({ receiverEmail: "receiver@example.com", amount: 100 });
+        .send({ receiverEmail: "receiver@example.com", amount: 100, pin: "1357" });
 
       expect(res.status).toBe(401);
     });

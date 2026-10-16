@@ -2,7 +2,7 @@ import { Queue } from "bullmq";
 import { bullmqConnection } from "../config/redis.config";
 import logger from "../config/logger";
 
-export type PaymentsJobData = { kind: "check-withdrawal"; reference: string } | { kind: "reconcile" };
+export type PaymentsJobData = { kind: "check-withdrawal"; reference: string } | { kind: "reconcile" } | { kind: "purge-kyc" };
 
 // Follow-up checks and periodic reconciliation for Paystack money movement
 export const paymentsQueue = new Queue<PaymentsJobData>("payments-maintenance", {
@@ -40,3 +40,7 @@ export const startPaymentsReconciliation = () =>
     { every: RECONCILE_EVERY_MS },
     { name: "reconcile", data: { kind: "reconcile" } }
   );
+
+// Deletes the ID photos of upgrade requests rejected over 30 days ago, once a day
+export const startKycPurge = () =>
+  paymentsQueue.upsertJobScheduler("kyc-purge", { every: 24 * 60 * 60 * 1000 }, { name: "purge-kyc", data: { kind: "purge-kyc" } });

@@ -28,4 +28,10 @@ describe("CORS", () => {
     expect(res.headers["access-control-allow-origin"]).toBe(ALLOWED);
     expect(res.headers["access-control-allow-headers"]).toMatch(/idempotency-key/i);
   });
+
+  it("exposes Content-Disposition so downloads keep their server-suggested filename", async () => {
+    const res = await request(app).get("/").set("Origin", ALLOWED);
+
+    expect(res.headers["access-control-expose-headers"]).toMatch(/content-disposition/i);
+  });
 });

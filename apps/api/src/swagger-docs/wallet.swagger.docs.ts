@@ -201,7 +201,13 @@
  *             required:
  *               - receiverEmail
  *               - amount
+ *               - pin
  *             properties:
+ *               pin:
+ *                 type: string
+ *                 pattern: '^\d{4}$'
+ *                 description: The sender's transaction PIN. 400 if wrong, 403 if none is set, 423 if locked.
+ *                 example: "7391"
  *               receiverEmail:
  *                 type: string
  *                 format: email

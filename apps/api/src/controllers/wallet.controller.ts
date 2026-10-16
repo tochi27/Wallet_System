@@ -6,11 +6,20 @@ import {
   computeBalance,
   getTransactions,
 } from "../services/wallet.service";
+import { LimitError } from "../services/limits.service";
 import { transferFunds } from "../services/transfer.service";
 import { reverseTransaction } from "../services/reversal.service";
 import { getWalletStats } from "../services/stats.service";
+import {
+  getStatement,
+  getTransactionDetail,
+  StatementTooLargeError,
+  TransactionNotFoundError,
+} from "../services/statement.service";
+import { renderStatementCsv, renderStatementPdf, statementFilename } from "../services/statement.render";
+import logger from "../config/logger";
 import { errorResponse, successResponse } from "../utils/response.utils";
-import { statsQuerySchema, transactionsQuerySchema } from "../validators/wallet.validators";
+import { statementQuerySchema, statsQuerySchema, transactionsQuerySchema } from "../validators/wallet.validators";
 
 export const credit = async (req: Request, res: Response) => {
   try {
@@ -100,6 +109,7 @@ export const transfer = async (req: Request, res: Response) => {
 
     return successResponse(res, "Transfer successful", result, 200);
   } catch (err: unknown) {
+    if (err instanceof LimitError) return errorResponse(res, err.message, err.status);
     const message = err instanceof Error ? err.message : "Transfer failed";
     const clientErrors = ["Insufficient funds", "Receiver not found", "Cannot transfer to yourself"];
     const status = clientErrors.includes(message) ? 400 : 500;
@@ -149,5 +159,41 @@ export const stats = async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to fetch wallet stats";
     return errorResponse(res, message, 500);
+  }
+};
+
+export const transactionDetail = async (req: Request, res: Response) => {
+  try {
+    const detail = await getTransactionDetail(req.userId, String(req.params.transactionId));
+    return successResponse(res, "Transaction fetched successfully", detail, 200);
+  } catch (err: unknown) {
+    if (err instanceof TransactionNotFoundError) return errorResponse(res, err.message, 404);
+    logger.error({ err }, "Failed to fetch transaction");
+    return errorResponse(res, "Failed to fetch transaction", 500);
+  }
+};
+
+export const statement = async (req: Request, res: Response) => {
+  const parsed = statementQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return errorResponse(res, parsed.error.issues[0]?.message ?? "Invalid query parameters", 400);
+  }
+  const { from, to, format, timezone } = parsed.data;
+
+  try {
+    const data = await getStatement(req.userId, from, to, timezone);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", `attachment; filename="${statementFilename(data, format)}"`);
+    if (format === "csv") {
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      return res.status(200).send(renderStatementCsv(data));
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.status(200);
+    renderStatementPdf(data, res);
+  } catch (err: unknown) {
+    if (err instanceof StatementTooLargeError) return errorResponse(res, err.message, 400);
+    logger.error({ err }, "Failed to build statement");
+    return errorResponse(res, "Failed to build statement", 500);
   }
 };
