@@ -15,6 +15,7 @@ const user = (overrides: Record<string, unknown> = {}) => ({
   transactionPinHash: "hashed-pin",
   pinFailedAttempts: 0,
   pinLockedUntil: null,
+  email: "ada@mailbox.ng",
   ...overrides,
 });
 
@@ -35,6 +36,14 @@ describe("pin.service", () => {
   });
 
   describe("verifyPin", () => {
+    it("never locks a shared demo account, whatever visitors guess", async () => {
+      (prisma.user.findUniqueOrThrow as jest.Mock).mockResolvedValue(user({ pinFailedAttempts: 4, email: "demo@purplewallet.demo" }));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(verifyPin("u1", "0000")).rejects.toMatchObject({ status: 400, code: "PIN_INCORRECT" });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
     it("passes for the right PIN and clears earlier failed attempts", async () => {
       (prisma.user.findUniqueOrThrow as jest.Mock).mockResolvedValue(user({ pinFailedAttempts: 2 }));
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);

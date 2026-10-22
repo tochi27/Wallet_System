@@ -1,43 +1,50 @@
+# Render Blueprint for the API. The database is Supabase and Redis is Redis Cloud (see DEPLOYMENT.md),
+# so there is no Render database here.
 services:
   - type: web
-    name: wallet-system-api
+    name: purplewallet-api
     runtime: docker
+    # Always state the plan: without it Render creates a paid Starter instance
+    plan: free
+    # Same region as the Supabase database
+    region: frankfurt
     dockerContext: .
     dockerfilePath: ./apps/api/Dockerfile
     healthCheckPath: /health
-    preDeployCommand: "npx prisma migrate deploy"
-    buildFilter:
-      paths:
-        - apps/api/**
-        - package.json
-        - package-lock.json
+    # CI deploys (through the deploy hook) only after the API and browser tests pass, so Render
+    # doesn't also build on every push. No preDeployCommand: the image applies migrations on start.
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "4000"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: wallet-db
-          property: connectionString
-      - key: REDIS_URL
-        sync: false  # set manually in Render dashboard
-      - key: JWT_SECRET
-        sync: false  # set manually in Render dashboard
-      - key: CORS_ORIGINS
-        sync: false  # frontend URL(s), comma-separated — set manually in Render dashboard
-      - key: PAYSTACK_SECRET_KEY
-        sync: false  # sk_test_… or sk_live_… — set manually in Render dashboard
-      - key: PAYSTACK_CALLBACK_URL
-        sync: false  # https://<frontend>/deposit/callback
-      - key: KYC_ENCRYPTION_KEY
-        sync: false  # REQUIRED: 32 random bytes, base64. Encrypts ID documents; never change it once set
-      - key: SUPPORT_EMAIL
-        sync: false  # address for the app's Help & support link
       - key: DIRECT_FUNDING_ENABLED
         value: "false"  # no direct credit/debit/reversal in production; money moves through Paystack
-
-
-databases:
-  - name: wallet-db
-    plan: free
+      - key: EMAIL_PROVIDER
+        value: gmail
+      # sync: false — Render asks for these when the Blueprint is created; they're never stored in Git
+      - key: DATABASE_URL
+        sync: false  # Supabase session pooler URL (apps/api/.env.production.local)
+      - key: REDIS_URL
+        sync: false  # Redis Cloud URL (apps/api/.env.production.local)
+      - key: JWT_SECRET
+        sync: false  # apps/api/.env.production.local
+      - key: KYC_ENCRYPTION_KEY
+        sync: false  # apps/api/.env.production.local — never change it once ID documents exist
+      - key: GMAIL_USER
+        sync: false  # the demo Gmail address
+      - key: GMAIL_APP_PASSWORD
+        sync: false  # its 16-letter app password
+      - key: APP_URL
+        sync: false  # the Netlify address, e.g. https://purplewallet.netlify.app
+      - key: CORS_ORIGINS
+        sync: false  # the same Netlify address
+      - key: PAYSTACK_SECRET_KEY
+        sync: false  # test key, sk_test_…
+      - key: PAYSTACK_CALLBACK_URL
+        sync: false  # <Netlify address>/deposit/callback
+      - key: GEMINI_API_KEY
+        sync: false  # optional: AI insights and the assistant
+      - key: SUPPORT_EMAIL
+        sync: false  # optional: defaults to GMAIL_USER

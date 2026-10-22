@@ -1,9 +1,16 @@
 /**
- * Development only: a demo user with 90 days of realistic Nigerian spending (rent, groceries,
- * Bolt rides, DSTV, transfers to family and friends, one unusually large payment), for trying
- * AI insights and the assistant, and for the assistant evaluation. Refuses to run in production.
+ * A demo user with 90 days of realistic Nigerian spending (rent, groceries, Bolt rides, DSTV,
+ * transfers to family and friends, one unusually large payment), for trying AI insights and the
+ * assistant, and for the assistant evaluation.
  *
- *   npm run seed:demo -w apps/api
+ *   npm run seed:demo -w apps/api                  local development (…@example.com accounts)
+ *   npm run seed:demo -w apps/api -- --showcase    the live demo site (see DEPLOYMENT.md)
+ *
+ * --showcase makes the accounts people are shown: demo@purplewallet.demo with a known password
+ * and PIN (the login page offers it), plus a read-only Viewer admin with a random password that's
+ * printed once, to share privately. The purplewallet.demo domain receives no email, and its
+ * password and PIN can't be changed or locked (see config/demo.ts). Run it from your own machine
+ * with DATABASE_URL pointing at the live database. It refuses to run inside a production server.
  *
  * Safe to re-run. Money history is never deleted or rewritten (the ledger is append-only), so a
  * re-run archives the previous demo accounts (renamed, history intact) and creates fresh ones
@@ -13,6 +20,7 @@
 import "../../config/env";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { DEMO_DOMAIN } from "../../config/demo";
 import { JournalEntryType, Prisma, TransactionStatus, TransactionType } from "@prisma/client";
 import prisma from "../../config/db";
 import { post, SYSTEM_ACCOUNTS } from "../../services/ledger/ledger.service";
@@ -22,12 +30,27 @@ if (process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
-const DEMO_USERS = {
-  demo: { email: "insights-demo@example.com", name: "Chiamaka Obi" },
-  landlord: { email: "insights-landlord@example.com", name: "Emeka Nwosu" },
-  sister: { email: "insights-sister@example.com", name: "Ngozi Obi" },
-  friend: { email: "insights-friend@example.com", name: "Tunde Bakare" },
-} as const;
+const showcase = process.argv.includes("--showcase");
+
+const DEMO_USERS = showcase
+  ? {
+      demo: { email: `demo@${DEMO_DOMAIN}`, name: "Chiamaka Obi" },
+      landlord: { email: `landlord@${DEMO_DOMAIN}`, name: "Emeka Nwosu" },
+      sister: { email: `sister@${DEMO_DOMAIN}`, name: "Ngozi Obi" },
+      friend: { email: `friend@${DEMO_DOMAIN}`, name: "Tunde Bakare" },
+    }
+  : {
+      demo: { email: "insights-demo@example.com", name: "Chiamaka Obi" },
+      landlord: { email: "insights-landlord@example.com", name: "Emeka Nwosu" },
+      sister: { email: "insights-sister@example.com", name: "Ngozi Obi" },
+      friend: { email: "insights-friend@example.com", name: "Tunde Bakare" },
+    };
+
+// Shown on the live site's login page (VITE_DEMO_PASSWORD / VITE_DEMO_PIN), so keep them in step
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "Password123";
+const DEMO_PIN = process.env.DEMO_PIN || "2580";
+const VIEWER_EMAIL = `viewer@${DEMO_DOMAIN}`;
+const randomPassword = () => crypto.randomBytes(12).toString("base64url");
 
 const daysAgo = (n: number, hour = 12) => {
   const d = new Date();
@@ -53,12 +76,12 @@ const archive = async (email: string, stamp: number) => {
   return true;
 };
 
-const createUser = async (email: string, name: string) =>
+const createUser = async (email: string, name: string, password = DEMO_PASSWORD) =>
   prisma.user.create({
     data: {
       email,
       name,
-      password: await bcrypt.hash("Password123", 10),
+      password: await bcrypt.hash(password, 10),
       emailVerifiedAt: new Date(), // demo accounts can move money straight away
       wallet: { create: { balance: 0 } },
     },
@@ -68,13 +91,24 @@ type Kind = "in" | "send" | "spend";
 
 const main = async () => {
   const stamp = Date.now();
+  if (showcase) console.log(`Seeding the showcase accounts into ${new URL(process.env.DATABASE_URL ?? "postgresql://unknown").host}`);
   let archived = 0;
   for (const { email } of Object.values(DEMO_USERS)) if (await archive(email, stamp)) archived++;
 
   const demo = await createUser(DEMO_USERS.demo.email, DEMO_USERS.demo.name);
-  const landlord = await createUser(DEMO_USERS.landlord.email, DEMO_USERS.landlord.name);
-  const sister = await createUser(DEMO_USERS.sister.email, DEMO_USERS.sister.name);
-  const friend = await createUser(DEMO_USERS.friend.email, DEMO_USERS.friend.name);
+  // Only the demo customer is signed in to; the people they pay get passwords nobody knows
+  const other = showcase ? randomPassword : () => DEMO_PASSWORD;
+  const landlord = await createUser(DEMO_USERS.landlord.email, DEMO_USERS.landlord.name, other());
+  const sister = await createUser(DEMO_USERS.sister.email, DEMO_USERS.sister.name, other());
+  const friend = await createUser(DEMO_USERS.friend.email, DEMO_USERS.friend.name, other());
+
+  if (showcase) {
+    // Ready to explore: a PIN for sending money, and AI features switched on
+    await prisma.user.update({
+      where: { id: demo.id },
+      data: { transactionPinHash: await bcrypt.hash(DEMO_PIN, 10), aiInsightsEnabled: true, aiInsightsConsentAt: new Date() },
+    });
+  }
 
   // [daysAgo, kind, amount, description, counterparty]
   const events: [number, Kind, number, string, { id: string } | null][] = [];
@@ -166,7 +200,34 @@ const main = async () => {
 
   const { balance } = await prisma.wallet.findUniqueOrThrow({ where: { userId: demo.id } });
   if (archived) console.log(`Archived ${archived} earlier demo account(s) (renamed "Archived demo · …", history kept)`);
-  console.log(`Seeded ${events.length} transactions for ${demo.email} (password Password123); balance ₦${balance.toFixed(2)}`);
+  console.log(`Seeded ${events.length} transactions for ${demo.email} (password ${DEMO_PASSWORD}); balance ₦${balance.toFixed(2)}`);
+
+  if (showcase) {
+    console.log(`Demo customer PIN: ${DEMO_PIN}`);
+    await seedViewer(stamp);
+  }
+};
+
+// A read-only admin for walking people through the admin console. A fresh random password each
+// run, printed once: share it privately, since a Viewer can see every visitor's name and email.
+const seedViewer = async (stamp: number) => {
+  await archive(VIEWER_EMAIL, stamp);
+  const password = randomPassword();
+  const viewer = await createUser(VIEWER_EMAIL, "Demo Viewer", password);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: viewer.id }, data: { role: "VIEWER" } }),
+    prisma.adminAuditLog.create({
+      data: {
+        adminId: null,
+        action: "admin.grant",
+        targetType: "User",
+        targetId: viewer.id,
+        reason: "Demo Viewer account for showing the admin console",
+        details: { via: "demo seed", email: VIEWER_EMAIL, from: "USER", to: "VIEWER" },
+      },
+    }),
+  ]);
+  console.log(`Demo Viewer admin: ${VIEWER_EMAIL} / ${password}  (share privately; it changes every time you re-seed)`);
 };
 
 main()

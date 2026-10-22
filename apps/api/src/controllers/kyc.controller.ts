@@ -3,6 +3,7 @@ import type { KycDocumentKind } from "@prisma/client";
 import { env } from "../config/env";
 import logger from "../config/logger";
 import { DocumentError } from "../services/kyc/documents";
+import { senderAddress } from "../services/notifications/email.service";
 import {
   approveUpgrade,
   getUpgradeDocument,
@@ -52,7 +53,7 @@ export const submitUpgradeRequest = async (req: Request, res: Response) => {
 
 // Where the app's "Help & support" link goes
 export const support = (_req: Request, res: Response) => {
-  const email = env.SUPPORT_EMAIL ?? /<([^>]+)>/.exec(env.EMAIL_FROM)?.[1] ?? env.EMAIL_FROM;
+  const email = env.SUPPORT_EMAIL ?? senderAddress();
   return successResponse(res, "Support contact fetched", { email });
 };
 

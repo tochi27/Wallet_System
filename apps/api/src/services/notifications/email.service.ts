@@ -1,3 +1,5 @@
+import nodemailer from "nodemailer";
+import { isUndeliverable } from "../../config/demo";
 import { env } from "../../config/env";
 import logger from "../../config/logger";
 
@@ -6,13 +8,53 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 export type Email = { to: string; subject: string; html: string; text: string };
 
+const useGmail = env.EMAIL_PROVIDER === "gmail";
+
+// One pooled connection to Gmail's mail servers, reused for every email
+const gmail = useGmail
+  ? nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
+      pool: true,
+      connectionTimeout: REQUEST_TIMEOUT_MS,
+      greetingTimeout: REQUEST_TIMEOUT_MS,
+      socketTimeout: 30_000,
+    })
+  : null;
+
+/** Whether emails really go out. When not, they're logged, and development prints links instead. */
+export const isEmailConfigured = () => (useGmail ? gmail !== null : Boolean(env.RESEND_API_KEY));
+
+/** The address emails come from, which is also the default support contact. */
+export const senderAddress = () =>
+  useGmail ? env.GMAIL_USER! : (/<([^>]+)>/.exec(env.EMAIL_FROM)?.[1] ?? env.EMAIL_FROM);
+
 /**
- * Sends an email through Resend. Without RESEND_API_KEY (local development) the email is
- * logged instead, so notification flows can be exercised without a provider.
+ * Sends an email through Gmail or Resend (EMAIL_PROVIDER). With neither set up (local
+ * development) the email is logged instead, so notification flows can be exercised without a
+ * provider. A failure throws, so the notification job retries with backoff.
  */
 export const sendEmail = async (email: Email): Promise<void> => {
+  // Demo and test addresses can't receive mail; sending would only bounce back to our own inbox
+  if (isUndeliverable(email.to)) {
+    logger.info({ to: email.to, subject: email.subject }, "Email not sent (address can't receive mail)");
+    return;
+  }
+
+  if (gmail) {
+    // Gmail signs mail from its own addresses, so it passes spam checks without a domain
+    await gmail.sendMail({
+      from: { name: "PurpleWallet", address: env.GMAIL_USER! },
+      to: email.to,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    });
+    return;
+  }
+
   if (!env.RESEND_API_KEY) {
-    logger.info({ to: email.to, subject: email.subject }, "Email not sent (RESEND_API_KEY unset)");
+    logger.info({ to: email.to, subject: email.subject }, "Email not sent (no email provider set up)");
     return;
   }
 

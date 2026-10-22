@@ -353,7 +353,7 @@
  *     summary: Verify the user's email with the token from the verification link
  *     description: |
  *       Signup emails a link to `APP_URL/verify-email?token=…` (in development without
- *       RESEND_API_KEY, the link is printed in the API log instead). Works whether or not the
+ *       an email provider, the link is printed in the API log instead). Works whether or not the
  *       person is signed in: holding the link proves they own the inbox. The link works once and
  *       expires in 24 hours; opening an already-used link that verified the account answers 200
  *       with `status: already_verified`.

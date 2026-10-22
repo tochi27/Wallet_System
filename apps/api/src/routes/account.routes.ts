@@ -10,6 +10,7 @@ import {
   updatePin,
 } from "../controllers/account.controller";
 import { authenticate } from "../middleware/auth.middleware";
+import { blockDemoAccount } from "../middleware/demo.middleware";
 import { uploadIdDocuments } from "../middleware/upload.middleware";
 import { requireVerifiedEmail } from "../middleware/verified.middleware";
 import { submitUpgradeRequest, support, upgradeStatus } from "../controllers/kyc.controller";
@@ -25,10 +26,10 @@ import {
 
 const router = Router();
 
-router.post("/pin", authenticate, walletLimiter, validate(setPinSchema), createPin);
-router.put("/pin", authenticate, walletLimiter, validate(changePinSchema), updatePin);
+router.post("/pin", authenticate, blockDemoAccount("PIN"), walletLimiter, validate(setPinSchema), createPin);
+router.put("/pin", authenticate, blockDemoAccount("PIN"), walletLimiter, validate(changePinSchema), updatePin);
 // The auth limit, since a wrong current password is a guess at it
-router.put("/password", authenticate, authLimiter, validate(changePasswordSchema), updatePassword);
+router.put("/password", authenticate, blockDemoAccount("password"), authLimiter, validate(changePasswordSchema), updatePassword);
 router.patch("/preferences", authenticate, walletLimiter, validate(preferencesSchema), savePreferences);
 
 router.get("/limits", authenticate, readLimiter, limits);

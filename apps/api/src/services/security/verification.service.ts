@@ -3,7 +3,7 @@ import prisma from "../../config/db";
 import { env } from "../../config/env";
 import logger from "../../config/logger";
 import redisClient from "../redis.service";
-import { renderNotificationEmail } from "../notifications/email.service";
+import { isEmailConfigured, renderNotificationEmail } from "../notifications/email.service";
 import { queueEmail } from "../notifications/notification.service";
 
 export const VERIFY_TOKEN_TTL_HOURS = 24;
@@ -71,7 +71,7 @@ export const sendVerificationEmail = async (user: { id: string; name: string; em
   await queueEmail({ to: user.email, ...message });
 
   // Without an email provider, local development would have no way to get the link
-  if (!env.RESEND_API_KEY && env.NODE_ENV !== "production") {
+  if (!isEmailConfigured() && env.NODE_ENV !== "production") {
     logger.info({ userId: user.id, link: `${env.APP_URL}${actionPath}` }, "Email verification link (development only)");
   }
 };

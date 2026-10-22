@@ -51,6 +51,11 @@ describe("password.service", () => {
   });
 
   describe("requestPasswordReset", () => {
+    it("never resets a shared demo account's password", async () => {
+      await expect(requestPasswordReset("demo@purplewallet.demo")).resolves.toBe("demo");
+      expect(queueEmail).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: "u1", name: "Ada Lovelace", email: "ada@example.com" });
     });

@@ -10,6 +10,9 @@ pnpm-debug.log*
 .env.development
 .env.test
 .env.production
+# Any other env file holding real secrets (e.g. .env.production.local), but never the template
+.env.*
+!.env.example
 
 # Build outputs
 dist/
@@ -31,6 +34,8 @@ postgres-data/
 # TypeScript
 *.tsbuildinfo
 *.d.ts
+# Hand-written: the web app's settings, not a generated file
+!apps/web/src/env.d.ts
 tsconfig.tsbuildinfo
 
 # VSCode & IDEs
