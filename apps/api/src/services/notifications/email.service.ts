@@ -22,12 +22,32 @@ const gmail = useGmail
     })
   : null;
 
+const useScript = env.EMAIL_PROVIDER === "gmail-script";
+
 /** Whether emails really go out. When not, they're logged, and development prints links instead. */
-export const isEmailConfigured = () => (useGmail ? gmail !== null : Boolean(env.RESEND_API_KEY));
+export const isEmailConfigured = () => (useScript ? true : useGmail ? gmail !== null : Boolean(env.RESEND_API_KEY));
 
 /** The address emails come from, which is also the default support contact. */
 export const senderAddress = () =>
-  useGmail ? env.GMAIL_USER! : (/<([^>]+)>/.exec(env.EMAIL_FROM)?.[1] ?? env.EMAIL_FROM);
+  (useGmail || useScript) && env.GMAIL_USER ? env.GMAIL_USER : (/<([^>]+)>/.exec(env.EMAIL_FROM)?.[1] ?? env.EMAIL_FROM);
+
+/**
+ * Sends through the Gmail relay (apps/api/scripts/gmail-relay.gs) over HTTPS. The script always
+ * answers 200, so success is its "ok" field. Errors never include the secret.
+ */
+const sendThroughScript = async (email: Email): Promise<void> => {
+  const res = await fetch(env.GMAIL_SCRIPT_URL!, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: env.GMAIL_SCRIPT_SECRET, fromName: "PurpleWallet", ...email }),
+    redirect: "follow", // Apps Script answers from a redirected address
+    signal: AbortSignal.timeout(30_000), // the script can take a few seconds to start
+  });
+  const result = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+  if (!res.ok || !result?.ok) {
+    throw new Error(`The Gmail relay didn't send the email (${res.status}): ${result?.error ?? "unexpected response"}`);
+  }
+};
 
 /**
  * Sends an email through Gmail or Resend (EMAIL_PROVIDER). With neither set up (local
@@ -38,6 +58,11 @@ export const sendEmail = async (email: Email): Promise<void> => {
   // Demo and test addresses can't receive mail; sending would only bounce back to our own inbox
   if (isUndeliverable(email.to)) {
     logger.info({ to: email.to, subject: email.subject }, "Email not sent (address can't receive mail)");
+    return;
+  }
+
+  if (useScript) {
+    await sendThroughScript(email);
     return;
   }
 

@@ -38,6 +38,9 @@ const main = async () => {
     console.log("Sent. Check the inbox (and the spam folder, the first time).");
   } catch (err) {
     console.error(`Not sent: ${err instanceof Error ? err.message : String(err)}`);
+    if (env.EMAIL_PROVIDER === "gmail-script") {
+      console.error("For the Gmail relay: check GMAIL_SCRIPT_URL ends in /exec, the RELAY_SECRET script property matches GMAIL_SCRIPT_SECRET, and the web app is deployed for \"Anyone\".");
+    }
     if (env.EMAIL_PROVIDER === "gmail") {
       console.error("For Gmail: check GMAIL_USER, that GMAIL_APP_PASSWORD is an app password (not the account password), and that 2-step verification is on.");
     }

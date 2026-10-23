@@ -57,6 +57,38 @@ describe("email.service", () => {
     });
   });
 
+  describe("with the Gmail relay script", () => {
+    const scriptEnv = {
+      EMAIL_PROVIDER: "gmail-script",
+      GMAIL_USER: "purplewallet.demo@gmail.com",
+      GMAIL_SCRIPT_URL: "https://script.google.com/macros/s/abc/exec",
+      GMAIL_SCRIPT_SECRET: "relay-secret-0123456789abcdef",
+    };
+
+    it("posts the email and the secret to the script over HTTPS", async () => {
+      const service = load(scriptEnv);
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, remainingToday: 99 }) });
+
+      await service.sendEmail(email);
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("https://script.google.com/macros/s/abc/exec");
+      expect(JSON.parse(init.body)).toEqual({ secret: "relay-secret-0123456789abcdef", fromName: "PurpleWallet", ...email });
+      expect(createTransport).not.toHaveBeenCalled();
+      expect(service.isEmailConfigured()).toBe(true);
+      expect(service.senderAddress()).toBe("purplewallet.demo@gmail.com");
+    });
+
+    it("throws when the script reports a failure (it always answers 200), without revealing the secret", async () => {
+      const service = load(scriptEnv);
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: false, error: "Not authorised" }) });
+
+      const error = await service.sendEmail(email).then(() => null, (err: Error) => err);
+      expect(error?.message).toContain("Not authorised");
+      expect(error?.message).not.toContain("relay-secret");
+    });
+  });
+
   describe("with Resend", () => {
     it("sends through Resend's API as before", async () => {
       const service = load({ EMAIL_PROVIDER: "resend", RESEND_API_KEY: "re_test" });
@@ -112,6 +144,12 @@ describe("email settings", () => {
     const { env, messages } = parse({ EMAIL_PROVIDER: "gmail", GMAIL_USER: "demo@gmail.com", GMAIL_APP_PASSWORD: "" });
     expect(env).toBeNull();
     expect(messages).toContain("EMAIL_PROVIDER=gmail needs GMAIL_USER and GMAIL_APP_PASSWORD");
+  });
+
+  it("refuses to start with the relay chosen but no secret", () => {
+    const { env, messages } = parse({ EMAIL_PROVIDER: "gmail-script", GMAIL_SCRIPT_URL: "https://script.google.com/macros/s/abc/exec" });
+    expect(env).toBeNull();
+    expect(messages).toContain("EMAIL_PROVIDER=gmail-script needs GMAIL_SCRIPT_URL and GMAIL_SCRIPT_SECRET");
   });
 
   it("accepts the app password with Google's spaces", () => {

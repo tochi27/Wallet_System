@@ -8,7 +8,7 @@ A step-by-step guide to putting PurpleWallet online as a **public demo**, using 
 | API (and its background workers) | **Render** (free web service, Frankfurt) | 512 MB, sleeps after 15 minutes without traffic, 750 hours a month |
 | Database | **Supabase** | 500 MB Postgres. Pauses only after a week without activity |
 | Queues, cache, locks | **Redis Cloud** | 30 MB, 30 connections |
-| Email | **Gmail** (app password) | About 500 emails a day |
+| Email | **Gmail**, through a small Google Apps Script relay | About 100 recipients a day |
 | AI insights and assistant | **Google Gemini** | Free tier (optional) |
 | Payments | **Paystack test mode** | No real money moves |
 
@@ -42,16 +42,37 @@ You don't need to create any tables: the API applies every migration itself when
    ```
    If the database requires TLS, use `rediss://` (two s's) instead; the API supports both.
 
-## 3. Email: Gmail
+## 3. Email: Gmail, through a relay script
 
-1. Use a Gmail account **just for this app** (not your personal one), with **2-step verification** turned on.
-2. Create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), named "PurpleWallet". Copy the 16 letters.
-3. Your settings are `EMAIL_PROVIDER=gmail`, `GMAIL_USER=<that address>` and `GMAIL_APP_PASSWORD=<the 16 letters>`.
+Render's free plan **blocks outgoing email connections** (SMTP), so the API can't talk to Gmail's mail servers directly. Instead, a small Google Apps Script in your Gmail account sends the emails, and the API reaches it over ordinary HTTPS. Emails still come from your Gmail address. Google allows personal accounts about **100 recipients a day** this way.
 
-To check them before deploying, put the same three lines in `apps/api/.env.development` and run:
+Use a Gmail account **just for this app**, not your personal one.
+
+1. **Make a secret.** Generate a random key for the script:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+   ```
+   This is your **`GMAIL_SCRIPT_SECRET`**. Save it in your private notes.
+2. **Create the script.** Signed in to that Gmail account, open [script.google.com](https://script.google.com) → **New project**. Rename it "PurpleWallet email relay". Delete the sample code and paste in everything from [`apps/api/scripts/gmail-relay.gs`](apps/api/scripts/gmail-relay.gs). Click **Save** (the disk icon).
+3. **Store the secret.** Click **Project Settings** (the gear icon on the left) → **Script Properties** → **Add script property**. Set the property to `RELAY_SECRET` and the value to your secret from step 1. **Save**.
+4. **Publish it.** Click **Deploy** (top right) → **New deployment** → the gear next to "Select type" → **Web app**. Set:
+   - **Execute as:** Me (your Gmail address)
+   - **Who has access:** Anyone
+
+   Click **Deploy**.
+5. **Allow it.** Google asks you to authorise. Choose your account. You'll see "Google hasn't verified this app": that's expected, because it's your own script. Click **Advanced → Go to PurpleWallet email relay (unsafe)** → **Allow**. It's only asking for permission to *send* email as you, not to read your mail.
+6. **Copy the Web app URL.** It ends in `/exec`. This is your **`GMAIL_SCRIPT_URL`**. Opening it in a browser should show `{"ok":true,"service":"PurpleWallet email relay"}`.
+
+Your settings are `EMAIL_PROVIDER=gmail-script`, `GMAIL_USER=<that address>`, `GMAIL_SCRIPT_URL` and `GMAIL_SCRIPT_SECRET`.
+
+To check them before deploying, put the same four lines in `apps/api/.env.development` and run:
 ```bash
 npm run email:test -w apps/api -- your-main-address@gmail.com
 ```
+
+**If you change the script later,** choose **Deploy → Manage deployments → edit (pencil) → Version: New version → Deploy**. That keeps the same URL. A *new* deployment gets a new URL, which you'd then have to update on Render.
+
+(Hosting somewhere that allows SMTP? You can skip the script and use `EMAIL_PROVIDER=gmail` with a Gmail [app password](https://myaccount.google.com/apppasswords) in `GMAIL_APP_PASSWORD` instead.)
 
 ## 4. The encryption key
 
@@ -87,7 +108,7 @@ Set these as environment variables on the host:
 | `REDIS_URL` | From step 2 |
 | `JWT_SECRET` | A long random string (at least 32 characters). Generate it like the encryption key. |
 | `KYC_ENCRYPTION_KEY` | From step 4 |
-| `EMAIL_PROVIDER` / `GMAIL_USER` / `GMAIL_APP_PASSWORD` | From step 3 |
+| `EMAIL_PROVIDER` / `GMAIL_USER` / `GMAIL_SCRIPT_URL` / `GMAIL_SCRIPT_SECRET` | From step 3 (`render.yaml` already sets `EMAIL_PROVIDER=gmail-script`) |
 | `APP_URL` | The web app's address from step 6, e.g. `https://purplewallet.netlify.app` (used for links in emails) |
 | `CORS_ORIGINS` | The same web address (the browser may only call the API from there) |
 | `PAYSTACK_SECRET_KEY` | Your Paystack **test** secret key (`sk_test_…`) |

@@ -56,9 +56,18 @@ const envSchema = z.object({
 
   // Email. "resend" sends through Resend (RESEND_API_KEY, needs a verified domain to reach anyone
   // but yourself). "gmail" sends through a Gmail account with an app password, which reaches
-  // anyone with no domain (about 500 emails a day). With neither set up, emails are logged instead.
-  EMAIL_PROVIDER: z.enum(["resend", "gmail"]).default("resend"),
+  // anyone with no domain (about 500 emails a day). "gmail-script" sends from a Gmail account
+  // through a Google Apps Script relay (apps/api/scripts/gmail-relay.gs) over HTTPS, for hosts that
+  // block outgoing SMTP, like Render's free plan (about 100 recipients a day). With none set up,
+  // emails are logged instead.
+  EMAIL_PROVIDER: z.enum(["resend", "gmail", "gmail-script"]).default("resend"),
   GMAIL_USER: z.preprocess((value) => (value === "" ? undefined : value), z.email().optional()),
+  // The relay's web app address (…/exec) and the secret set in its Script properties
+  GMAIL_SCRIPT_URL: z.preprocess((value) => (value === "" ? undefined : value), z.url().optional()),
+  GMAIL_SCRIPT_SECRET: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(24, "GMAIL_SCRIPT_SECRET must be at least 24 characters").optional()
+  ),
   // Google shows it in groups of four; the spaces don't matter
   GMAIL_APP_PASSWORD: z.preprocess(
     (value) => (typeof value === "string" ? value.replace(/\s/g, "") || undefined : value),
@@ -114,6 +123,10 @@ const parsed = envSchema
   )
   .refine((config) => config.EMAIL_PROVIDER !== "gmail" || (config.GMAIL_USER && config.GMAIL_APP_PASSWORD), {
     message: "EMAIL_PROVIDER=gmail needs GMAIL_USER and GMAIL_APP_PASSWORD",
+    path: ["EMAIL_PROVIDER"],
+  })
+  .refine((config) => config.EMAIL_PROVIDER !== "gmail-script" || (config.GMAIL_SCRIPT_URL && config.GMAIL_SCRIPT_SECRET), {
+    message: "EMAIL_PROVIDER=gmail-script needs GMAIL_SCRIPT_URL and GMAIL_SCRIPT_SECRET",
     path: ["EMAIL_PROVIDER"],
   })
   .refine((config) => config.NODE_ENV !== "production" || config.KYC_ENCRYPTION_KEY !== undefined, {

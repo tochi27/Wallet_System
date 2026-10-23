@@ -21,8 +21,9 @@ services:
         value: "4000"
       - key: DIRECT_FUNDING_ENABLED
         value: "false"  # no direct credit/debit/reversal in production; money moves through Paystack
+      # Render's free plan blocks outgoing SMTP, so email goes through the Gmail relay script over HTTPS
       - key: EMAIL_PROVIDER
-        value: gmail
+        value: gmail-script
       # sync: false — Render asks for these when the Blueprint is created; they're never stored in Git
       - key: DATABASE_URL
         sync: false  # Supabase session pooler URL (apps/api/.env.production.local)
@@ -33,9 +34,11 @@ services:
       - key: KYC_ENCRYPTION_KEY
         sync: false  # apps/api/.env.production.local — never change it once ID documents exist
       - key: GMAIL_USER
-        sync: false  # the demo Gmail address
-      - key: GMAIL_APP_PASSWORD
-        sync: false  # its 16-letter app password
+        sync: false  # the demo Gmail address (the relay sends from it)
+      - key: GMAIL_SCRIPT_URL
+        sync: false  # the relay's web app address, ending in /exec (DEPLOYMENT.md step 3)
+      - key: GMAIL_SCRIPT_SECRET
+        sync: false  # apps/api/.env.production.local; must match the script's RELAY_SECRET property
       - key: APP_URL
         sync: false  # the Netlify address, e.g. https://purplewallet.netlify.app
       - key: CORS_ORIGINS
