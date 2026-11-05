@@ -36,7 +36,9 @@ jobs:
   test-api:
     name: API — Type-check & Test
     needs: changes
-    if: needs.changes.outputs.api == 'true'
+    # Pull requests: only when the API changed. Pushes to main: always, because a deploy follows and
+    # change detection doesn't work reliably on pushes (it found no changes on merge commits)
+    if: github.event_name == 'push' || needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -72,7 +74,8 @@ jobs:
   test-web:
     name: Web — Lint, build & browser tests
     needs: changes
-    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true'
+    # As above: always on pushes to main, before the deploy
+    if: github.event_name == 'push' || needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
