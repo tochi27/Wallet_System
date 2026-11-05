@@ -25,7 +25,7 @@ npm run dev:api                                          # start the API dev ser
 
 This is an npm workspaces monorepo. Run commands from the repo root; the root scripts forward to the right app (for example `npm run test:api` runs `npm run test -w apps/api`).
 
-The API will be available at `http://localhost:4000` and Swagger docs at `http://localhost:4000/api-docs`.
+The API will be available at `http://localhost:4200` and Swagger docs at `http://localhost:4200/api-docs`.
 
 ## Running Tests
 
@@ -53,6 +53,7 @@ npm run build:api
 - No comments explaining *what* the code does — only *why* when non-obvious
 - Follow the existing layered pattern: route → controller → service → Prisma
 - New behaviour must be covered by tests
+- **A migration that creates a table must also run `ALTER TABLE "Name" ENABLE ROW LEVEL SECURITY;`**. On Supabase, a table without it is exposed through Supabase's public Data API. The app itself isn't affected: it connects as the tables' owner, which bypasses row-level security. A test (`migrations.unit.test.ts`) fails if it's missing.
 
 ## Submitting a Pull Request
 

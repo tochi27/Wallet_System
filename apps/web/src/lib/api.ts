@@ -1,6 +1,6 @@
 import { getToken } from "@/lib/token"
 
-const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/+$/, "")
+const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:4200").replace(/\/+$/, "")
 
 // Every API response is wrapped as { success, message, data }
 type Envelope<T> = {

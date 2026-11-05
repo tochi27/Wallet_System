@@ -8,7 +8,8 @@ const envSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
 
-  PORT: z.coerce.number().int().positive().default(4000),
+  // 4200 locally; hosts set PORT themselves (render.yaml uses 4000)
+  PORT: z.coerce.number().int().positive().default(4200),
 
   // Database
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
