@@ -22,6 +22,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Skeleton } from "@/components/ui/skeleton"
 import { errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
+import { demo } from "@/lib/demo"
 import { cn } from "@/lib/utils"
 import { upgradeDetailsSchema, type UpgradeDetailsValues } from "@/schemas/upgrade"
 
@@ -71,6 +72,18 @@ export function UpgradePage() {
               <AlertDescription>
                 <span className="font-medium text-foreground">Last time we couldn't verify your ID: {status.latest.rejection.label}.</span>{" "}
                 {status.latest.rejection.message}
+              </AlertDescription>
+            </Alert>
+          )}
+          {demo.enabled && (
+            <Alert>
+              <AlertCircleIcon aria-hidden />
+              <AlertDescription>
+                <span className="font-medium text-foreground">This is a demo. Please don't upload a real ID.</span>{" "}
+                <a href="/demo-sample-id.jpg" download className="font-medium text-foreground underline underline-offset-4">
+                  Download the sample ID card
+                </a>{" "}
+                and use it for every photo, including the selfie. The ID number can be any 11 digits.
               </AlertDescription>
             </Alert>
           )}

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { isDemoEmail } from "../../config/demo";
 import prisma from "../../config/db";
 import { notify } from "../notifications/notification.service";
 
@@ -61,7 +62,7 @@ export const setPin = async (userId: string, password: string, pin: string): Pro
 export const verifyPin = async (userId: string, pin: string): Promise<void> => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { transactionPinHash: true, pinFailedAttempts: true, pinLockedUntil: true },
+    select: { transactionPinHash: true, pinFailedAttempts: true, pinLockedUntil: true, email: true },
   });
   if (!user.transactionPinHash) throw new PinError("Set a transaction PIN first", 403, "PIN_NOT_SET");
   if (user.pinLockedUntil && user.pinLockedUntil > new Date()) {
@@ -73,6 +74,11 @@ export const verifyPin = async (userId: string, pin: string): Promise<void> => {
       await prisma.user.update({ where: { id: userId }, data: { pinFailedAttempts: 0, pinLockedUntil: null } });
     }
     return;
+  }
+
+  // A shared demo account never locks: one visitor's wrong guesses mustn't shut out everyone else
+  if (isDemoEmail(user.email)) {
+    throw new PinError("Incorrect PIN. The demo account's PIN is shown on the login page.", 400, "PIN_INCORRECT");
   }
 
   const { pinFailedAttempts } = await prisma.user.update({

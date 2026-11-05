@@ -14,7 +14,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
   // Redis
-  REDIS_URL: z.string().default("redis://localhost:6379"),
+  // Docker Compose publishes Redis on 6380 locally (see docker-compose.yaml)
+  REDIS_URL: z.string().default("redis://localhost:6380"),
 
   // Auth — enforce a strong secret in production
   JWT_SECRET: z
@@ -53,7 +54,25 @@ const envSchema = z.object({
   // still use the real (test) API. Refused in production and with a live key — see below.
   PAYSTACK_SIMULATE_PAYOUTS: z.stringbool().default(false),
 
-  // Email (Resend). Without a key, emails are logged instead of sent.
+  // Email. "resend" sends through Resend (RESEND_API_KEY, needs a verified domain to reach anyone
+  // but yourself). "gmail" sends through a Gmail account with an app password, which reaches
+  // anyone with no domain (about 500 emails a day). "gmail-script" sends from a Gmail account
+  // through a Google Apps Script relay (apps/api/scripts/gmail-relay.gs) over HTTPS, for hosts that
+  // block outgoing SMTP, like Render's free plan (about 100 recipients a day). With none set up,
+  // emails are logged instead.
+  EMAIL_PROVIDER: z.enum(["resend", "gmail", "gmail-script"]).default("resend"),
+  GMAIL_USER: z.preprocess((value) => (value === "" ? undefined : value), z.email().optional()),
+  // The relay's web app address (…/exec) and the secret set in its Script properties
+  GMAIL_SCRIPT_URL: z.preprocess((value) => (value === "" ? undefined : value), z.url().optional()),
+  GMAIL_SCRIPT_SECRET: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(24, "GMAIL_SCRIPT_SECRET must be at least 24 characters").optional()
+  ),
+  // Google shows it in groups of four; the spaces don't matter
+  GMAIL_APP_PASSWORD: z.preprocess(
+    (value) => (typeof value === "string" ? value.replace(/\s/g, "") || undefined : value),
+    z.string().optional()
+  ),
   RESEND_API_KEY: z.preprocess((value) => (value === "" ? undefined : value), z.string().optional()),
   // Must be an address on a domain verified in Resend; Resend's shared sender works only
   // for emailing your own account address while developing
@@ -78,7 +97,7 @@ const envSchema = z.object({
       .refine((value) => Buffer.from(value, "base64").length === 32, "KYC_ENCRYPTION_KEY must be 32 bytes, base64-encoded")
       .optional()
   ),
-  // Where the app's "Help & support" link sends users. Defaults to the EMAIL_FROM address.
+  // Where the app's "Help & support" link sends users. Defaults to the address emails come from.
   SUPPORT_EMAIL: z.preprocess((value) => (value === "" ? undefined : value), z.email().optional()),
 
   // Endpoints that move money with no real payment behind them: POST /api/wallet/credit,
@@ -102,6 +121,14 @@ const parsed = envSchema
       path: ["PAYSTACK_SIMULATE_PAYOUTS"],
     }
   )
+  .refine((config) => config.EMAIL_PROVIDER !== "gmail" || (config.GMAIL_USER && config.GMAIL_APP_PASSWORD), {
+    message: "EMAIL_PROVIDER=gmail needs GMAIL_USER and GMAIL_APP_PASSWORD",
+    path: ["EMAIL_PROVIDER"],
+  })
+  .refine((config) => config.EMAIL_PROVIDER !== "gmail-script" || (config.GMAIL_SCRIPT_URL && config.GMAIL_SCRIPT_SECRET), {
+    message: "EMAIL_PROVIDER=gmail-script needs GMAIL_SCRIPT_URL and GMAIL_SCRIPT_SECRET",
+    path: ["EMAIL_PROVIDER"],
+  })
   .refine((config) => config.NODE_ENV !== "production" || config.KYC_ENCRYPTION_KEY !== undefined, {
     message: "KYC_ENCRYPTION_KEY is required in production",
     path: ["KYC_ENCRYPTION_KEY"],

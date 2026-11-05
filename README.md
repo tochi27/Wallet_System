@@ -39,7 +39,7 @@ The API is a production-grade **TypeScript** wallet engine built with **Express*
 - **Admin roles and balance adjustments** — Viewer, Support, Finance and Owner roles, each with more powers; owners manage staff from the console. Finance can refund, credit or correct a balance: up to ₦10,000 applies at once, above that a different admin must approve (maker-checker). With only one Finance or Owner admin (solo mode), they can approve their own, recorded as self-approved; adding a second switches the two-person rule back on. Password re-entry for every money or role change; everything audited
 - **Admin console** — admin-only `/admin` area and `/api/admin` API: user search and detail, freeze/unfreeze (blocks money out only), PIN unlocks, stuck-payment rechecks, Paystack event log, balance reconciliation, and an append-only audit log (a database trigger rejects edits). Admins are granted by script, never through the API
 - **Transaction PIN** — 4-digit PIN (bcrypt-hashed, guessable PINs refused) required for transfers and withdrawals; 5 wrong attempts lock money movement for 30 minutes
-- **Notifications** — in-app notification centre plus email via Resend (a BullMQ queue, so slow email never delays a payment); money emails are optional, security alerts (new device sign-in, PIN changes, lockouts) always sent
+- **Notifications** — in-app notification centre plus email through Gmail (free, an app password, no domain needed) or Resend, chosen with `EMAIL_PROVIDER` (sent from a BullMQ queue, so slow email never delays a payment; check the setup with `npm run email:test -w apps/api -- you@example.com`); money emails are optional, security alerts (new device sign-in, PIN changes, lockouts) always sent
 - **Receipts & statements** — per-transaction receipts, and PDF/CSV statements with opening/closing and running balances (CSV guarded against spreadsheet formula injection)
 - **Paystack withdrawals** — saved bank accounts (name looked up via Paystack), transfers with the wallet debited up front and refunded exactly once if the transfer fails or is reversed; a follow-up check and 5-minute reconciliation settle anything a webhook misses
 - **Wallet operations** — credit, debit, balance (stored + computed), transaction history
@@ -194,6 +194,8 @@ npm run admin:revoke:prod -- someone@example.com "Left the company"
 
 These use the server's own `DATABASE_URL`, so they change the production database.
 
+**No shell on your host** (common on free plans)? Run the local command from your own machine with `DATABASE_URL` set to the live database instead. [DEPLOYMENT.md](DEPLOYMENT.md#8-your-admin-account-and-the-demo-accounts) shows how.
+
 ### Good to know
 
 - **First admin after a fresh deploy:** sign up in the app as normal, then run `admin:grant:prod` with that email.
@@ -208,7 +210,7 @@ Swagger UI is available at:
 
 | Environment | URL |
 |:------------|:----|
-| Production | `https://wallet-system-api-16cv.onrender.com/api-docs` |
+| Production | Not deployed at the moment; see [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Local | `http://localhost:4000/api-docs` |
 
 ### Endpoints
@@ -332,6 +334,12 @@ wallet-system/
 
 ---
 
+## 🚀 Deploying
+
+[DEPLOYMENT.md](DEPLOYMENT.md) is a step-by-step guide to putting PurpleWallet online for free as a public demo: Netlify (web), Supabase (Postgres), Redis Cloud, Gmail (email) and Paystack test mode, plus demo accounts for visitors (`npm run seed:demo -w apps/api -- --showcase`).
+
+---
+
 ## 🐳 Docker
 
 ```bash
@@ -354,7 +362,7 @@ docker build -f apps/api/Dockerfile .
 | Issue | Fix |
 |:------|:----|
 | `DATABASE_URL is required` at startup | Check `apps/api/.env.development` exists and has the variable set |
-| `ECONNREFUSED 6379` | Redis isn't running — start Docker Desktop, then run `npm run dev:api` again |
+| `ECONNREFUSED 6380` | Redis isn't running (locally it's on port 6380, not the default 6379) — start Docker Desktop, then run `npm run dev:api` again |
 | `ECONNREFUSED 5432` | Postgres isn't running — same as above |
 | `Cannot connect to the Docker daemon` on `npm run dev:api` | Docker Desktop isn't running — open it and try again |
 | The app shows different data from what you expect, or `localhost:5432` isn't the Docker database | Another Postgres installed on your machine is also using port 5432. Stop it (Windows: `Stop-Service postgresql-x64-<version>` in an admin PowerShell, and set it to Manual) so the Docker database (Postgres 18) is the one on 5432 |

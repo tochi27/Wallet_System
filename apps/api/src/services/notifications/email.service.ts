@@ -1,3 +1,5 @@
+import nodemailer from "nodemailer";
+import { isUndeliverable } from "../../config/demo";
 import { env } from "../../config/env";
 import logger from "../../config/logger";
 
@@ -6,13 +8,78 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 export type Email = { to: string; subject: string; html: string; text: string };
 
+const useGmail = env.EMAIL_PROVIDER === "gmail";
+
+// One pooled connection to Gmail's mail servers, reused for every email
+const gmail = useGmail
+  ? nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
+      pool: true,
+      connectionTimeout: REQUEST_TIMEOUT_MS,
+      greetingTimeout: REQUEST_TIMEOUT_MS,
+      socketTimeout: 30_000,
+    })
+  : null;
+
+const useScript = env.EMAIL_PROVIDER === "gmail-script";
+
+/** Whether emails really go out. When not, they're logged, and development prints links instead. */
+export const isEmailConfigured = () => (useScript ? true : useGmail ? gmail !== null : Boolean(env.RESEND_API_KEY));
+
+/** The address emails come from, which is also the default support contact. */
+export const senderAddress = () =>
+  (useGmail || useScript) && env.GMAIL_USER ? env.GMAIL_USER : (/<([^>]+)>/.exec(env.EMAIL_FROM)?.[1] ?? env.EMAIL_FROM);
+
 /**
- * Sends an email through Resend. Without RESEND_API_KEY (local development) the email is
- * logged instead, so notification flows can be exercised without a provider.
+ * Sends through the Gmail relay (apps/api/scripts/gmail-relay.gs) over HTTPS. The script always
+ * answers 200, so success is its "ok" field. Errors never include the secret.
+ */
+const sendThroughScript = async (email: Email): Promise<void> => {
+  const res = await fetch(env.GMAIL_SCRIPT_URL!, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: env.GMAIL_SCRIPT_SECRET, fromName: "PurpleWallet", ...email }),
+    redirect: "follow", // Apps Script answers from a redirected address
+    signal: AbortSignal.timeout(30_000), // the script can take a few seconds to start
+  });
+  const result = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+  if (!res.ok || !result?.ok) {
+    throw new Error(`The Gmail relay didn't send the email (${res.status}): ${result?.error ?? "unexpected response"}`);
+  }
+};
+
+/**
+ * Sends an email through Gmail or Resend (EMAIL_PROVIDER). With neither set up (local
+ * development) the email is logged instead, so notification flows can be exercised without a
+ * provider. A failure throws, so the notification job retries with backoff.
  */
 export const sendEmail = async (email: Email): Promise<void> => {
+  // Demo and test addresses can't receive mail; sending would only bounce back to our own inbox
+  if (isUndeliverable(email.to)) {
+    logger.info({ to: email.to, subject: email.subject }, "Email not sent (address can't receive mail)");
+    return;
+  }
+
+  if (useScript) {
+    await sendThroughScript(email);
+    return;
+  }
+
+  if (gmail) {
+    // Gmail signs mail from its own addresses, so it passes spam checks without a domain
+    await gmail.sendMail({
+      from: { name: "PurpleWallet", address: env.GMAIL_USER! },
+      to: email.to,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    });
+    return;
+  }
+
   if (!env.RESEND_API_KEY) {
-    logger.info({ to: email.to, subject: email.subject }, "Email not sent (RESEND_API_KEY unset)");
+    logger.info({ to: email.to, subject: email.subject }, "Email not sent (no email provider set up)");
     return;
   }
 

@@ -2,7 +2,7 @@
 #   docker build -f apps/api/Dockerfile .
 
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ WORKDIR /app/apps/api
 RUN npx prisma generate && npm run build
 
 # ── Stage 2: Production image ─────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 
@@ -39,4 +39,9 @@ COPY --from=builder /app/apps/api/dist ./dist
 
 EXPOSE 4000
 
-CMD ["node", "dist/server.js"]
+# Not root: the app never needs it
+USER node
+
+# Applies any new migrations before starting, so a deploy needs no separate step (free hosting
+# plans often have no pre-deploy hook). exec hands signals straight to Node for clean shutdowns.
+CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/server.js"]

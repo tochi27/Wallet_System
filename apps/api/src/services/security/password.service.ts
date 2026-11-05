@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import prisma from "../../config/db";
+import { isDemoEmail } from "../../config/demo";
 import redisClient from "../redis.service";
 import { renderNotificationEmail } from "../notifications/email.service";
 import { notify, queueEmail } from "../notifications/notification.service";
@@ -40,7 +41,9 @@ const invalidLink = () =>
  * returns, so the response never reveals whether an email is registered; the result is only for
  * logs and tests. One email per address every 2 minutes, registered or not.
  */
-export const requestPasswordReset = async (email: string): Promise<"sent" | "cooldown" | "no_account"> => {
+export const requestPasswordReset = async (email: string): Promise<"sent" | "cooldown" | "no_account" | "demo"> => {
+  // A shared demo account's password must stay as published; callers answer the same way regardless
+  if (isDemoEmail(email)) return "demo";
   const fresh = await redisClient.set(cooldownKey(email), "1", "EX", RESET_COOLDOWN_SECONDS, "NX");
   if (fresh !== "OK") return "cooldown";
 

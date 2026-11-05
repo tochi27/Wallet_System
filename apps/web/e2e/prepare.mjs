@@ -27,7 +27,19 @@ execSync("npx prisma migrate deploy", {
   stdio: ["ignore", "ignore", "inherit"],
 })
 
+// Only ever wipe a Redis database that is empty or that an earlier run marked as ours: the port
+// might be another project's Redis, whose data must never be touched
+const MARKER = "purplewallet:e2e-database"
 const redis = new Redis(E2E.redisUrl)
+const keys = await redis.dbsize()
+if (keys > 0 && !(await redis.exists(MARKER))) {
+  redis.disconnect()
+  throw new Error(
+    `Refusing to wipe ${E2E.redisUrl}: it has ${keys} keys and isn't marked as the browser tests' database. ` +
+      "Another project's Redis may be using this port. Stop it, or set E2E_REDIS_URL to a free database."
+  )
+}
 await redis.flushdb()
+await redis.set(MARKER, "1")
 redis.disconnect()
 console.log("e2e: fresh database and Redis ready")
