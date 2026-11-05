@@ -32,6 +32,8 @@ Free plans change without notice, and none of them comes with guarantees. That's
 
 You don't need to create any tables: the API applies every migration itself when it starts. They've been tested on Postgres 17 as well as 18.
 
+**Switch off Supabase's Data API.** Supabase offers every table through a public web API by default; this app doesn't use it. Under **Project Settings → Data API**, turn it off, or remove `public` from the exposed schemas. As a second layer, a migration (`lock_down_public_schema`) turns on row-level security for every table and removes the API roles' access, so Supabase's security advisor stays clear.
+
 ## 2. Redis: Redis Cloud
 
 1. Sign up at [redis.io/try-free](https://redis.io/try-free) and create a **free (Essentials 30 MB)** database, in the same region as the database if you can.

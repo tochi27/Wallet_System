@@ -5,7 +5,7 @@ services:
       dockerfile: apps/api/Dockerfile
       target: builder
     ports:
-      - "4000:4000"
+      - "4200:4200"
     environment:
       - NODE_ENV=development
     depends_on:

@@ -113,7 +113,7 @@ npm run db:generate
 npm run dev:api
 ```
 
-Server runs at `http://localhost:4000`.
+Server runs at `http://localhost:4200`.
 
 ---
 
@@ -211,7 +211,7 @@ Swagger UI is available at:
 | Environment | URL |
 |:------------|:----|
 | Production | Not deployed at the moment; see [DEPLOYMENT.md](DEPLOYMENT.md) |
-| Local | `http://localhost:4000/api-docs` |
+| Local | `http://localhost:4200/api-docs` |
 
 ### Endpoints
 
